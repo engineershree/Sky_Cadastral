@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, ShieldCheck, CheckCircle2, Phone, Mail, User, Building } from 'lucide-react';
 import { formatPrice } from '../../utils/geometryUtils';
+import { bookingService } from '../../services/bookingService';
 
 export default function BookingModal({
   plot,
@@ -19,7 +20,7 @@ export default function BookingModal({
 
   if (!plot) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.fullName.trim() || !formData.phone.trim()) {
       setError('Please fill in your Full Name and Contact Phone Number.');
@@ -27,26 +28,35 @@ export default function BookingModal({
     }
 
     setIsSubmitting(true);
+    setError('');
 
-    setTimeout(() => {
-      const refNumber = `SKY-2026-${Math.floor(10000 + Math.random() * 90000)}`;
-
-      const bookingInfo = {
-        refNumber,
-        fullName: formData.fullName,
-        phone: formData.phone,
-        email: formData.email,
-        plotNumber: plot.plotNumber,
+    try {
+      // Call bookingService.createBooking() as mandated by backend-ready service architecture
+      const bookingResult = await bookingService.createBooking({
         plotId: plot.id,
-        bookedAt: new Date().toLocaleString('en-IN')
-      };
+        plotNumber: plot.plotNumber,
+        fullName: formData.fullName.trim(),
+        phone: formData.phone.trim(),
+        email: formData.email.trim()
+      });
 
-      setConfirmationData(bookingInfo);
+      setConfirmationData({
+        refNumber: bookingResult.referenceCode,
+        fullName: bookingResult.customerName,
+        phone: bookingResult.phone,
+        email: bookingResult.email,
+        plotNumber: bookingResult.plotNumber,
+        plotId: bookingResult.plotId,
+        bookedAt: new Date(bookingResult.timestamp).toLocaleString('en-IN')
+      });
+
+      // Trigger reactive state refresh in parent explorer
+      onConfirmBooking(plot.id, bookingResult);
+    } catch (err) {
+      setError(err.message || 'Failed to submit booking request. Please try again.');
+    } finally {
       setIsSubmitting(false);
-
-      // Trigger plot status update in state from AVAILABLE -> BOOKED
-      onConfirmBooking(plot.id, bookingInfo);
-    }, 600);
+    }
   };
 
   return (
@@ -56,8 +66,8 @@ export default function BookingModal({
           <div className="modal-title-group">
             <ShieldCheck className="title-icon" />
             <div>
-              <h3>{confirmationData ? 'Booking Request Submitted' : 'Plot Reservation Request'}</h3>
-              <p>Sky Cadastral Master Plan Phase 1</p>
+              <h3>{confirmationData ? 'Booking Confirmation' : 'Plot Reservation Request'}</h3>
+              <p>Sky Cadastral Master Plan — Sunrise Valley</p>
             </div>
           </div>
           <button className="modal-close-btn" onClick={onClose}>
@@ -74,14 +84,14 @@ export default function BookingModal({
 
             <span className="success-badge">DEMO BOOKING CONFIRMED</span>
 
-            <h2>Request Submitted Successfully!</h2>
+            <h2>Reservation Confirmed!</h2>
             <p className="success-subtitle">
-              Your reservation request for plot <strong>{confirmationData.plotNumber}</strong> has been logged.
+              Your plot reservation for <strong>{confirmationData.plotNumber}</strong> has been created.
             </p>
 
             <div className="receipt-box">
               <div className="receipt-row">
-                <span>Reference Number:</span>
+                <span>Reference Code:</span>
                 <strong className="ref-highlight">{confirmationData.refNumber}</strong>
               </div>
               <div className="receipt-row">
@@ -103,7 +113,7 @@ export default function BookingModal({
             </div>
 
             <p className="demo-disclaimer">
-              ℹ️ Note: This is a static demonstration workflow. Plot status for <strong>{confirmationData.plotNumber}</strong> has been updated to <strong>BOOKED</strong> in your session.
+              ℹ️ Note: Plot <strong>{confirmationData.plotNumber}</strong> is now updated to <strong>BOOKED</strong> in both 2D SVG and 3D Three.js renderers.
             </p>
 
             <button className="confirm-close-btn" onClick={onClose}>
@@ -145,7 +155,7 @@ export default function BookingModal({
                 <Phone size={18} className="input-icon" />
                 <input
                   type="tel"
-                  placeholder="e.g. 9876543210"
+                  placeholder="e.g. +91 9876543210"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   required
@@ -167,7 +177,7 @@ export default function BookingModal({
             </div>
 
             <div className="form-group">
-              <label>Target Plot Number</label>
+              <label>Plot Number (Pre-filled)</label>
               <div className="input-with-icon disabled">
                 <Building size={18} className="input-icon" />
                 <input type="text" value={plot.plotNumber} disabled />
@@ -179,7 +189,7 @@ export default function BookingModal({
                 Cancel
               </button>
               <button type="submit" className="btn-submit-booking" disabled={isSubmitting}>
-                {isSubmitting ? 'Processing...' : 'Submit Booking Request'}
+                {isSubmitting ? 'Processing Booking...' : 'Submit Booking Request'}
               </button>
             </div>
           </form>

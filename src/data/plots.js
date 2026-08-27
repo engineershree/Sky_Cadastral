@@ -1,579 +1,257 @@
-// Master Plan Sample Plot Data for Sky Cadastral 3D Land Plot Booking System Demo
+// Master Plan Canonical Data Model for Sky Cadastral 2D + 3D Land Plot Booking Platform
+// Exact survey master plan matching user reference image (A01-A20, B01-B12, C01-C12, D01-D12, E01-E12)
 
 export const LAYOUT_METADATA = {
-  id: "layout-sky-phase-1",
-  name: "Sky Cadastral Master Plan - Phase 1",
-  location: "Sunrise Valley, Pune-Nashik Highway, Maharashtra",
-  totalAreaSqFt: 35200,
-  totalPlots: 24,
-  surveyNumber: "Gat No. 142/A & 142/B",
-  approvalStatus: "N.A. Sanctioned & PMRDA Approved",
+  id: "layout-sky-sunrise-valley",
+  name: "Sky Cadastral Master Plan - Sunrise Valley",
+  location: "Sunrise Valley, Pune-Nashik Expressway Corridor",
+  surveyNumber: "Gat No. 142/A & 142/B, PMRDA Sanctioned",
+  approvalStatus: "N.A. Sanctioned & RERA Approved",
+  totalAreaSqFt: 98500,
+  totalPlots: 60,
   scaleFactor: 1.0,
-  viewCenter: [110, 80],
-  bounds: { minX: 0, maxX: 220, minY: 0, maxY: 160 }
+  viewCenter: [130, 100],
+  bounds: { minX: 0, maxX: 270, minY: 0, maxY: 200 }
+};
+
+export const ENTRANCE_GATE = {
+  id: "entrance-gate-main",
+  name: "Sky Cadastral Grand Entrance Plaza",
+  coordinates: [60, 6],
+  width: 30,
+  height: 8,
+  title: "MAIN ENTRANCE ROAD"
 };
 
 export const ROADS = [
   {
-    id: "road-main-boulevard",
-    name: "60ft Main Avenue Boulevard",
-    width: 20,
+    id: "road-main-entrance",
+    name: "MAIN ENTRANCE ROAD",
+    width: 14,
     coordinates: [
-      [0, 70],
-      [220, 70],
-      [220, 90],
-      [0, 90]
+      [0, 0],
+      [270, 0],
+      [270, 12],
+      [0, 12]
     ]
   },
   {
-    id: "road-entrance-vertical",
-    name: "40ft Central Entrance Way",
-    width: 20,
+    id: "road-18m-top",
+    name: "18M WIDE ROAD",
+    width: 12,
     coordinates: [
-      [100, 0],
-      [120, 0],
-      [120, 160],
-      [100, 160]
+      [10, 160],
+      [215, 160],
+      [215, 172],
+      [10, 172]
     ]
   },
   {
-    id: "road-north-lane",
-    name: "30ft North Internal Road",
-    width: 10,
+    id: "road-12m-middle-top",
+    name: "12M WIDE ROAD",
+    width: 12,
     coordinates: [
-      [0, 135],
-      [220, 135],
-      [220, 145],
-      [0, 145]
+      [5, 124],
+      [215, 124],
+      [215, 136],
+      [5, 136]
     ]
   },
   {
-    id: "road-south-lane",
-    name: "30ft South Internal Road",
-    width: 10,
+    id: "road-12m-middle-bottom",
+    name: "12M WIDE ROAD",
+    width: 12,
     coordinates: [
-      [0, 15],
-      [220, 15],
-      [220, 25],
-      [0, 25]
+      [5, 60],
+      [215, 60],
+      [215, 72],
+      [5, 72]
     ]
   },
   {
-    id: "road-west-lane",
-    name: "30ft West Internal Access Road",
-    width: 10,
+    id: "road-18m-central-vertical",
+    name: "18M WIDE ROAD",
+    width: 14,
     coordinates: [
-      [45, 0],
-      [55, 0],
-      [55, 160],
-      [45, 160]
-    ]
-  },
-  {
-    id: "road-east-lane",
-    name: "30ft East Internal Access Road",
-    width: 10,
-    coordinates: [165, 0],
-    coordinates: [
-      [165, 0],
-      [175, 0],
-      [175, 160],
-      [165, 160]
+      [104, 12],
+      [118, 12],
+      [118, 136],
+      [104, 136]
     ]
   }
 ];
 
 export const GREEN_AREAS = [
   {
-    id: "park-central",
-    name: "Central Amenity Park & Children Play Zone",
+    id: "lake-water-pond",
+    name: "Water Pond Lake",
+    type: "Water Body",
+    coordinates: [
+      [220, 170],
+      [238, 170],
+      [242, 195],
+      [224, 195]
+    ]
+  },
+  {
+    id: "clubhouse-zone",
+    name: "Clubhouse",
+    type: "Clubhouse",
+    coordinates: [
+      [220, 140],
+      [245, 140],
+      [245, 165],
+      [220, 165]
+    ]
+  },
+  {
+    id: "children-play-area",
+    name: "Children's Play Area",
+    type: "Play Area",
+    coordinates: [
+      [222, 110],
+      [255, 110],
+      [255, 135],
+      [222, 135]
+    ]
+  },
+  {
+    id: "central-park",
+    name: "Central Park",
     type: "Park",
     coordinates: [
-      [10, 72],
-      [45, 72],
-      [45, 88],
-      [10, 88]
+      [220, 50],
+      [255, 50],
+      [255, 105],
+      [220, 105]
     ]
   },
   {
-    id: "park-east",
-    name: "Landscape Green Corridor",
-    type: "Green Belt",
+    id: "sports-area",
+    name: "Sports Area",
+    type: "Sports",
     coordinates: [
-      [175, 72],
-      [210, 72],
-      [210, 88],
-      [175, 88]
+      [220, 12],
+      [255, 12],
+      [255, 45],
+      [220, 45]
     ]
   }
 ];
 
-export const INITIAL_PLOTS_DATA = [
-  // ================= SECTOR 100 (NORTH-WEST) =================
-  {
-    id: "plot-101",
-    plotNumber: "P-101",
-    sector: "Sector A",
-    area: 1360,
-    price: 4760000,
-    facing: "North-West",
-    status: "available",
-    type: "Corner",
-    dimensions: "32' x 42.5'",
-    roadWidth: "30 ft Internal Road",
-    description: "Premium corner plot with dual road access and optimal natural ventilation.",
-    coordinates: [
-      [10, 145],
-      [42, 145],
-      [42, 158],
-      [10, 158]
-    ]
-  },
-  {
-    id: "plot-102",
-    plotNumber: "P-102",
-    sector: "Sector A",
-    area: 1280,
-    price: 4100000,
-    facing: "West",
-    status: "available",
-    type: "Regular",
-    dimensions: "32' x 40'",
-    roadWidth: "30 ft West Access Road",
-    description: "Ideal rectangular residential plot facing West with direct access to West lane.",
-    coordinates: [
-      [10, 120],
-      [42, 120],
-      [42, 140],
-      [10, 140]
-    ]
-  },
-  {
-    id: "plot-103",
-    plotNumber: "P-103",
-    sector: "Sector A",
-    area: 1088,
-    price: 3800000,
-    facing: "West",
-    status: "booked",
-    type: "Regular",
-    dimensions: "32' x 34'",
-    roadWidth: "30 ft West Access Road",
-    description: "Standard residential plot close to central boulevard.",
-    coordinates: [
-      [10, 95],
-      [42, 95],
-      [42, 115],
-      [10, 115]
-    ]
-  },
-  {
-    id: "plot-104",
-    plotNumber: "P-104",
-    sector: "Sector A",
-    area: 1420,
-    price: 4970000,
-    facing: "North",
-    status: "available",
-    type: "Irregular",
-    dimensions: "35' x 40.5'",
-    roadWidth: "30 ft North Internal Road",
-    description: "Distinctive plot featuring a tapered boundary and extra backyard space.",
-    coordinates: [
-      [58, 145],
-      [90, 145],
-      [98, 152],
-      [98, 158],
-      [58, 158]
-    ]
-  },
-  {
-    id: "plot-105",
-    plotNumber: "P-105",
-    sector: "Sector A",
-    area: 1480,
-    price: 5180000,
-    facing: "East",
-    status: "available",
-    type: "Regular",
-    dimensions: "37' x 40'",
-    roadWidth: "40 ft Entrance Way",
-    description: "East-facing Vastu-compliant plot situated directly along the entrance avenue.",
-    coordinates: [
-      [58, 120],
-      [95, 120],
-      [95, 140],
-      [58, 140]
-    ]
-  },
-  {
-    id: "plot-106",
-    plotNumber: "P-106",
-    sector: "Sector A",
-    area: 1258,
-    price: 5660000,
-    facing: "South (Main Road)",
-    status: "sold",
-    type: "Premium",
-    dimensions: "37' x 34'",
-    roadWidth: "60 ft Main Boulevard",
-    description: "High-value commercial-cum-residential plot directly facing the 60ft main boulevard.",
-    coordinates: [
-      [58, 95],
-      [95, 95],
-      [95, 115],
-      [58, 115]
-    ]
-  },
+// Helper generator for exact plot canonical definitions
+function createPlot(id, plotNumber, status, area, facing, price, coords) {
+  return {
+    id: `plot-${id.toLowerCase()}`,
+    plotNumber,
+    status: status.toLowerCase(), // 'available', 'booked', 'sold', 'reserved'
+    area,
+    facing,
+    price,
+    coordinates: coords,
+    lengthFt: 50,
+    widthFt: 30,
+    surveyNumber: "Gat No. 142/A",
+    description: `Prime residential plot ${plotNumber} situated along ${facing}-facing avenue.`
+  };
+}
 
-  // ================= SECTOR 200 (NORTH-EAST) =================
-  {
-    id: "plot-201",
-    plotNumber: "P-201",
-    sector: "Sector B",
-    area: 1258,
-    price: 5900000,
-    facing: "South (Main Road)",
-    status: "available",
-    type: "Premium Corner",
-    dimensions: "37' x 34'",
-    roadWidth: "60 ft Main Boulevard & Entrance Way",
-    description: "Flagship corner plot at the entrance intersection of 60ft Boulevard and Entrance Way.",
-    coordinates: [
-      [125, 95],
-      [162, 95],
-      [162, 115],
-      [125, 115]
-    ]
-  },
-  {
-    id: "plot-202",
-    plotNumber: "P-202",
-    sector: "Sector B",
-    area: 1480,
-    price: 4880000,
-    facing: "West",
-    status: "booked",
-    type: "Regular",
-    dimensions: "37' x 40'",
-    roadWidth: "40 ft Entrance Way",
-    description: "Spacious residential plot facing the main central green corridor entrance.",
-    coordinates: [
-      [125, 120],
-      [162, 120],
-      [162, 140],
-      [125, 140]
-    ]
-  },
-  {
-    id: "plot-203",
-    plotNumber: "P-203",
-    sector: "Sector B",
-    area: 1360,
-    price: 4400000,
-    facing: "North-West",
-    status: "available",
-    type: "Corner",
-    dimensions: "37' x 34'",
-    roadWidth: "30 ft North Internal Road",
-    description: "Quiet North-facing corner plot ideal for a multi-story bungalow.",
-    coordinates: [
-      [125, 145],
-      [162, 145],
-      [162, 158],
-      [125, 158]
-    ]
-  },
-  {
-    id: "plot-204",
-    plotNumber: "P-204",
-    sector: "Sector B",
-    area: 1088,
-    price: 3900000,
-    facing: "East",
-    status: "sold",
-    type: "Regular",
-    dimensions: "32' x 34'",
-    roadWidth: "30 ft East Internal Access Road",
-    description: "Compact East-facing plot in quiet residential zone.",
-    coordinates: [
-      [178, 95],
-      [210, 95],
-      [210, 115],
-      [178, 115]
-    ]
-  },
-  {
-    id: "plot-205",
-    plotNumber: "P-205",
-    sector: "Sector B",
-    area: 1280,
-    price: 4350000,
-    facing: "East",
-    status: "available",
-    type: "Regular",
-    dimensions: "32' x 40'",
-    roadWidth: "30 ft East Internal Access Road",
-    description: "Well-proportioned East-facing plot with excellent sunlight exposure.",
-    coordinates: [
-      [178, 120],
-      [210, 120],
-      [210, 140],
-      [178, 140]
-    ]
-  },
-  {
-    id: "plot-206",
-    plotNumber: "P-206",
-    sector: "Sector B",
-    area: 1320,
-    price: 5200000,
-    facing: "North-East",
-    status: "available",
-    type: "Irregular Corner",
-    dimensions: "32' x 42'",
-    roadWidth: "30 ft North & East Internal Roads",
-    description: "Exclusive North-East corner plot with unique geometry and high ventilation.",
-    coordinates: [
-      [178, 145],
-      [210, 145],
-      [210, 158],
-      [195, 158],
-      [178, 150]
-    ]
-  },
+export const PLOTS = [
+  // ==========================================
+  // ROW 1: TOP ROW (A01 - A10)
+  // ==========================================
+  createPlot("A01", "A01", "available", 1500, "North", 4500000, [[15, 172], [34, 172], [34, 192], [22, 192]]),
+  createPlot("A02", "A02", "available", 1500, "North", 4500000, [[34, 172], [53, 172], [53, 192], [34, 192]]),
+  createPlot("A03", "A03", "available", 1500, "North", 4500000, [[53, 172], [72, 172], [72, 192], [53, 192]]),
+  createPlot("A04", "A04", "available", 1500, "North", 4500000, [[72, 172], [91, 172], [91, 192], [72, 192]]),
+  createPlot("A05", "A05", "available", 1500, "North", 4500000, [[91, 172], [110, 172], [110, 192], [91, 192]]),
+  createPlot("A06", "A06", "available", 1500, "North", 4500000, [[110, 172], [129, 172], [129, 192], [110, 192]]),
+  createPlot("A07", "A07", "reserved", 1500, "North", 4500000, [[129, 172], [148, 172], [148, 192], [129, 192]]), // Pastel yellow reserved
+  createPlot("A08", "A08", "available", 1500, "North", 4500000, [[148, 172], [167, 172], [167, 192], [148, 192]]),
+  createPlot("A09", "A09", "available", 1500, "North", 4500000, [[167, 172], [186, 172], [186, 192], [167, 192]]),
+  createPlot("A10", "A10", "available", 1500, "North", 4500000, [[186, 172], [205, 172], [205, 192], [186, 192]]),
 
-  // ================= SECTOR 300 (SOUTH-WEST) =================
-  {
-    id: "plot-301",
-    plotNumber: "P-301",
-    sector: "Sector C",
-    area: 1180,
-    price: 4130000,
-    facing: "South-West",
-    status: "available",
-    type: "Irregular",
-    dimensions: "32' x 35'",
-    roadWidth: "30 ft South Internal Road",
-    description: "Custom trapezoidal plot offering high privacy at the South-West boundary.",
-    coordinates: [
-      [10, 2],
-      [42, 2],
-      [42, 15],
-      [22, 15],
-      [10, 10]
-    ]
-  },
-  {
-    id: "plot-302",
-    plotNumber: "P-302",
-    sector: "Sector C",
-    area: 1280,
-    price: 4220000,
-    facing: "West",
-    status: "booked",
-    type: "Regular",
-    dimensions: "32' x 40'",
-    roadWidth: "30 ft West Access Road",
-    description: "Prime West-facing plot adjacent to South internal road.",
-    coordinates: [
-      [10, 20],
-      [42, 20],
-      [42, 40],
-      [10, 40]
-    ]
-  },
-  {
-    id: "plot-303",
-    plotNumber: "P-303",
-    sector: "Sector C",
-    area: 1088,
-    price: 3950000,
-    facing: "West",
-    status: "available",
-    type: "Regular",
-    dimensions: "32' x 34'",
-    roadWidth: "30 ft West Access Road",
-    description: "Regular residential plot near Central Amenity Park.",
-    coordinates: [
-      [10, 45],
-      [42, 45],
-      [42, 65],
-      [10, 65]
-    ]
-  },
-  {
-    id: "plot-304",
-    plotNumber: "P-304",
-    sector: "Sector C",
-    area: 1258,
-    price: 4400000,
-    facing: "South",
-    status: "available",
-    type: "Regular",
-    dimensions: "37' x 34'",
-    roadWidth: "30 ft South Internal Road",
-    description: "South-facing rectangular plot with peaceful surroundings.",
-    coordinates: [
-      [58, 2],
-      [95, 2],
-      [95, 15],
-      [58, 15]
-    ]
-  },
-  {
-    id: "plot-305",
-    plotNumber: "P-305",
-    sector: "Sector C",
-    area: 1480,
-    price: 5920000,
-    facing: "North (Main Road)",
-    status: "available",
-    type: "Premium",
-    dimensions: "37' x 40'",
-    roadWidth: "60 ft Main Boulevard",
-    description: "High visibility boulevard plot facing the North main road.",
-    coordinates: [
-      [58, 20],
-      [95, 20],
-      [95, 40],
-      [58, 40]
-    ]
-  },
-  {
-    id: "plot-306",
-    plotNumber: "P-306",
-    sector: "Sector C",
-    area: 1258,
-    price: 5400000,
-    facing: "North (Main Road)",
-    status: "sold",
-    type: "Corner",
-    dimensions: "37' x 34'",
-    roadWidth: "60 ft Main Boulevard",
-    description: "Corner plot facing the main entrance avenue and 60ft road.",
-    coordinates: [
-      [58, 45],
-      [95, 45],
-      [95, 65],
-      [58, 65]
-    ]
-  },
+  // ==========================================
+  // ROW 2: SECOND BLOCK (A11 - A20)
+  // ==========================================
+  createPlot("A11", "A11", "sold", 1800, "South", 5400000, [[10, 136], [34, 136], [34, 160], [10, 160]]), // Grey sold
+  createPlot("A12", "A12", "available", 1500, "South", 4500000, [[34, 136], [53, 136], [53, 160], [34, 160]]),
+  createPlot("A13", "A13", "available", 1500, "South", 4500000, [[53, 136], [72, 136], [72, 160], [53, 160]]),
+  createPlot("A14", "A14", "available", 1500, "South", 4500000, [[72, 136], [91, 136], [91, 160], [72, 160]]),
+  createPlot("A15", "A15", "sold", 1500, "South", 4500000, [[91, 136], [110, 136], [110, 160], [91, 160]]), // Grey sold
+  createPlot("A16", "A16", "available", 1500, "South", 4500000, [[110, 136], [129, 136], [129, 160], [110, 160]]),
+  createPlot("A17", "A17", "available", 1500, "South", 4500000, [[129, 136], [148, 136], [148, 160], [129, 160]]),
+  createPlot("A18", "A18", "available", 1500, "South", 4500000, [[148, 136], [167, 136], [167, 160], [148, 160]]),
+  createPlot("A19", "A19", "sold", 1500, "South", 4500000, [[167, 136], [186, 136], [186, 160], [167, 160]]), // Grey sold
+  createPlot("A20", "A20", "available", 1500, "South", 4500000, [[186, 136], [205, 136], [205, 160], [186, 160]]),
 
-  // ================= SECTOR 400 (SOUTH-EAST) =================
-  {
-    id: "plot-401",
-    plotNumber: "P-401",
-    sector: "Sector D",
-    area: 1258,
-    price: 5660000,
-    facing: "North (Main Road)",
-    status: "available",
-    type: "Corner",
-    dimensions: "37' x 34'",
-    roadWidth: "60 ft Main Boulevard & Entrance",
-    description: "Main Boulevard corner plot near entrance gate.",
-    coordinates: [
-      [125, 45],
-      [162, 45],
-      [162, 65],
-      [125, 65]
-    ]
-  },
-  {
-    id: "plot-402",
-    plotNumber: "P-402",
-    sector: "Sector D",
-    area: 1480,
-    price: 6200000,
-    facing: "North (Main Road)",
-    status: "available",
-    type: "Premium",
-    dimensions: "37' x 40'",
-    roadWidth: "60 ft Main Boulevard",
-    description: "Premium large plot facing main 60ft road, ideal for luxury villa.",
-    coordinates: [
-      [125, 20],
-      [162, 20],
-      [162, 40],
-      [125, 40]
-    ]
-  },
-  {
-    id: "plot-403",
-    plotNumber: "P-403",
-    sector: "Sector D",
-    area: 1258,
-    price: 4400000,
-    facing: "South",
-    status: "available",
-    type: "Regular",
-    dimensions: "37' x 34'",
-    roadWidth: "30 ft South Internal Road",
-    description: "Quiet residential plot facing South internal road.",
-    coordinates: [
-      [125, 2],
-      [162, 2],
-      [162, 15],
-      [125, 15]
-    ]
-  },
-  {
-    id: "plot-404",
-    plotNumber: "P-404",
-    sector: "Sector D",
-    area: 1150,
-    price: 4250000,
-    facing: "East",
-    status: "booked",
-    type: "Irregular",
-    dimensions: "32' x 34'",
-    roadWidth: "30 ft East Internal Access Road",
-    description: "Unique corner plot with chamfered edge near green corridor.",
-    coordinates: [
-      [178, 45],
-      [210, 45],
-      [210, 65],
-      [195, 65],
-      [178, 58]
-    ]
-  },
-  {
-    id: "plot-405",
-    plotNumber: "P-405",
-    sector: "Sector D",
-    area: 1280,
-    price: 4300000,
-    facing: "East",
-    status: "available",
-    type: "Regular",
-    dimensions: "32' x 40'",
-    roadWidth: "30 ft East Internal Access Road",
-    description: "East-facing rectangular plot with great cross-breeze.",
-    coordinates: [
-      [178, 20],
-      [210, 20],
-      [210, 40],
-      [178, 40]
-    ]
-  },
-  {
-    id: "plot-406",
-    plotNumber: "P-406",
-    sector: "Sector D",
-    area: 1088,
-    price: 4800000,
-    facing: "South-East",
-    status: "booked",
-    type: "Premium",
-    dimensions: "32' x 34'",
-    roadWidth: "30 ft South & East Roads",
-    description: "South-East corner plot near the landscape green corridor.",
-    coordinates: [
-      [178, 2],
-      [210, 2],
-      [210, 15],
-      [178, 15]
-    ]
-  }
+  // ==========================================
+  // CENTRAL SECTION - BLOCK B (LEFT: B01 - B12)
+  // ==========================================
+  createPlot("B01", "B01", "available", 1600, "East", 4800000, [[8, 98], [24, 98], [24, 124], [8, 124]]),
+  createPlot("B02", "B02", "available", 1600, "East", 4800000, [[24, 98], [40, 98], [40, 124], [24, 124]]),
+  createPlot("B03", "B03", "available", 1600, "East", 4800000, [[40, 98], [56, 98], [56, 124], [40, 124]]),
+  createPlot("B04", "B04", "available", 1600, "East", 4800000, [[56, 98], [72, 98], [72, 124], [56, 124]]),
+  createPlot("B05", "B05", "available", 1600, "East", 4800000, [[72, 98], [88, 98], [88, 124], [72, 124]]),
+  createPlot("B06", "B06", "available", 1600, "East", 4800000, [[88, 98], [104, 98], [104, 124], [88, 124]]),
+
+  createPlot("B07", "B07", "available", 1600, "West", 4800000, [[8, 72], [24, 72], [24, 98], [8, 98]]),
+  createPlot("B08", "B08", "available", 1600, "West", 4800000, [[24, 72], [40, 72], [40, 98], [24, 98]]),
+  createPlot("B09", "B09", "available", 1600, "West", 4800000, [[40, 72], [56, 72], [56, 98], [40, 98]]),
+  createPlot("B10", "B10", "booked", 1600, "West", 4800000, [[56, 72], [72, 72], [72, 98], [56, 98]]), // Pastel pink booked
+  createPlot("B11", "B11", "available", 1600, "West", 4800000, [[72, 72], [88, 72], [88, 98], [72, 98]]),
+  createPlot("B12", "B12", "available", 1600, "West", 4800000, [[88, 72], [104, 72], [104, 98], [88, 98]]),
+
+  // ==========================================
+  // CENTRAL SECTION - BLOCK C (RIGHT: C01 - C12)
+  // ==========================================
+  createPlot("C01", "C01", "available", 1600, "East", 4800000, [[118, 98], [134, 98], [134, 124], [118, 124]]),
+  createPlot("C02", "C02", "available", 1600, "East", 4800000, [[134, 98], [150, 98], [150, 124], [134, 124]]),
+  createPlot("C03", "C03", "available", 1600, "East", 4800000, [[150, 98], [166, 98], [166, 124], [150, 124]]),
+  createPlot("C04", "C04", "available", 1600, "East", 4800000, [[166, 98], [182, 98], [182, 124], [166, 124]]),
+  createPlot("C05", "C05", "available", 1600, "East", 4800000, [[182, 98], [198, 98], [198, 124], [182, 124]]),
+  createPlot("C06", "C06", "available", 1600, "East", 4800000, [[198, 98], [214, 98], [214, 124], [198, 124]]),
+
+  createPlot("C07", "C07", "available", 1600, "West", 4800000, [[118, 72], [134, 72], [134, 98], [118, 98]]),
+  createPlot("C08", "C08", "available", 1600, "West", 4800000, [[134, 72], [150, 72], [150, 98], [134, 98]]),
+  createPlot("C09", "C09", "available", 1600, "West", 4800000, [[150, 72], [166, 72], [166, 98], [150, 98]]),
+  createPlot("C10", "C10", "available", 1600, "West", 4800000, [[166, 72], [182, 72], [182, 98], [166, 98]]),
+  createPlot("C11", "C11", "available", 1600, "West", 4800000, [[182, 72], [198, 72], [198, 98], [182, 98]]),
+  createPlot("C12", "C12", "available", 1600, "West", 4800000, [[198, 72], [214, 72], [214, 98], [198, 98]]),
+
+  // ==========================================
+  // BOTTOM SECTION - BLOCK D (LEFT: D01 - D12)
+  // ==========================================
+  createPlot("D01", "D01", "available", 1600, "North", 4800000, [[6, 36], [22, 36], [22, 60], [6, 60]]),
+  createPlot("D02", "D02", "available", 1600, "North", 4800000, [[22, 36], [38, 36], [38, 60], [22, 60]]),
+  createPlot("D03", "D03", "available", 1600, "North", 4800000, [[38, 36], [54, 36], [54, 60], [38, 60]]), // Selected highlight
+  createPlot("D04", "D04", "available", 1600, "North", 4800000, [[54, 36], [70, 36], [70, 60], [54, 60]]),
+  createPlot("D05", "D05", "available", 1600, "North", 4800000, [[70, 36], [86, 36], [86, 60], [70, 60]]),
+  createPlot("D06", "D06", "available", 1600, "North", 4800000, [[86, 36], [102, 36], [102, 60], [86, 60]]),
+
+  createPlot("D07", "D07", "available", 1600, "South", 4800000, [[4, 12], [22, 12], [22, 36], [4, 36]]),
+  createPlot("D08", "D08", "available", 1600, "South", 4800000, [[22, 12], [38, 12], [38, 36], [22, 36]]),
+  createPlot("D09", "D09", "available", 1600, "South", 4800000, [[38, 12], [54, 12], [54, 36], [38, 36]]),
+  createPlot("D10", "D10", "available", 1600, "South", 4800000, [[54, 12], [70, 12], [70, 36], [54, 36]]),
+  createPlot("D11", "D11", "available", 1600, "South", 4800000, [[70, 12], [86, 12], [86, 36], [70, 36]]),
+  createPlot("D12", "D12", "available", 1600, "South", 4800000, [[86, 12], [102, 12], [102, 36], [86, 36]]),
+
+  // ==========================================
+  // BOTTOM SECTION - BLOCK E (RIGHT: E01 - E12)
+  // ==========================================
+  createPlot("E01", "E01", "available", 1600, "North", 4800000, [[118, 36], [134, 36], [134, 60], [118, 60]]),
+  createPlot("E02", "E02", "sold", 1600, "North", 4800000, [[134, 36], [150, 36], [150, 60], [134, 60]]), // Grey sold
+  createPlot("E03", "E03", "available", 1600, "North", 4800000, [[150, 36], [166, 36], [166, 60], [150, 60]]),
+  createPlot("E04", "E04", "available", 1600, "North", 4800000, [[166, 36], [182, 36], [182, 60], [166, 60]]),
+  createPlot("E05", "E05", "available", 1600, "North", 4800000, [[182, 36], [198, 36], [198, 60], [182, 60]]),
+  createPlot("E06", "E06", "available", 1600, "North", 4800000, [[198, 36], [214, 36], [214, 60], [198, 60]]),
+
+  createPlot("E07", "E07", "available", 1600, "South", 4800000, [[118, 12], [134, 12], [134, 36], [118, 36]]),
+  createPlot("E08", "E08", "available", 1600, "South", 4800000, [[134, 12], [150, 12], [150, 36], [134, 36]]),
+  createPlot("E09", "E09", "available", 1600, "South", 4800000, [[150, 12], [166, 12], [166, 36], [150, 36]]),
+  createPlot("E10", "E10", "available", 1600, "South", 4800000, [[182, 12], [182, 36], [166, 36], [166, 12]]),
+  createPlot("E11", "E11", "available", 1600, "South", 4800000, [[198, 12], [198, 36], [182, 36], [182, 12]]),
+  createPlot("E12", "E12", "available", 1600, "South", 4800000, [[214, 12], [214, 36], [198, 36], [198, 12]])
 ];
+
+export const INITIAL_PLOTS_DATA = PLOTS;

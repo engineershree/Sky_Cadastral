@@ -1,11 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from '../components/layout/Navbar';
-import { INITIAL_PLOTS_DATA, LAYOUT_METADATA } from '../data/plots';
+import { LAYOUT_METADATA } from '../data/plots';
+import { plotService } from '../services/plotService';
 import { formatPrice } from '../utils/geometryUtils';
-import { LayoutDashboard, CheckCircle, AlertCircle, Lock, RefreshCw, Layers } from 'lucide-react';
+import { LayoutDashboard, Layers } from 'lucide-react';
 
 export default function DemoAdmin() {
-  const [plots, setPlots] = useState(INITIAL_PLOTS_DATA);
+  const [plots, setPlots] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadPlots() {
+      try {
+        const data = await plotService.getPlots();
+        setPlots(data);
+      } catch (err) {
+        console.error('Error fetching admin plot inventory:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadPlots();
+  }, []);
 
   const totalPlots = plots.length;
   const availableCount = plots.filter((p) => p.status.toLowerCase() === 'available').length;
@@ -15,10 +31,14 @@ export default function DemoAdmin() {
   const totalRevenue = plots.reduce((acc, p) => acc + p.price, 0);
   const bookedRevenue = plots.filter(p => p.status !== 'available').reduce((acc, p) => acc + p.price, 0);
 
-  const handleStatusToggle = (plotId, newStatus) => {
-    setPlots((prev) =>
-      prev.map((p) => (p.id === plotId ? { ...p, status: newStatus } : p))
-    );
+  const handleStatusToggle = async (plotId, newStatus) => {
+    try {
+      await plotService.updatePlotStatus(plotId, newStatus);
+      const updated = await plotService.getPlots();
+      setPlots(updated);
+    } catch (err) {
+      console.error('Error updating status:', err);
+    }
   };
 
   return (
@@ -44,13 +64,13 @@ export default function DemoAdmin() {
           <div className="admin-stat-card">
             <span className="stat-label">Total Inventory</span>
             <span className="stat-value">{totalPlots} Plots</span>
-            <span className="stat-sub">35,200 sq.ft Total Layout</span>
+            <span className="stat-sub">78,500 sq.ft Total Master Plan</span>
           </div>
 
           <div className="admin-stat-card available">
             <span className="stat-label">Available Plots</span>
             <span className="stat-value">{availableCount}</span>
-            <span className="stat-sub">Ready for Booking</span>
+            <span className="stat-sub">Ready for Reservation</span>
           </div>
 
           <div className="admin-stat-card booked">
@@ -62,7 +82,7 @@ export default function DemoAdmin() {
           <div className="admin-stat-card sold">
             <span className="stat-label">Sold Out</span>
             <span className="stat-value">{soldCount}</span>
-            <span className="stat-sub">Registration Completed</span>
+            <span className="stat-sub">Registry Completed</span>
           </div>
 
           <div className="admin-stat-card revenue">
@@ -99,63 +119,67 @@ export default function DemoAdmin() {
         <div className="admin-table-card">
           <div className="table-header">
             <h3>Plot Inventory Control</h3>
-            <p>Click status buttons below to test live status updates across the demo.</p>
+            <p>Click status buttons below to test live status updates across 2D & 3D renderers.</p>
           </div>
 
           <div className="table-responsive">
-            <table className="inventory-table">
-              <thead>
-                <tr>
-                  <th>Plot No.</th>
-                  <th>Sector</th>
-                  <th>Area (sq.ft)</th>
-                  <th>Price (₹)</th>
-                  <th>Facing</th>
-                  <th>Type</th>
-                  <th>Current Status</th>
-                  <th>Admin Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {plots.map((plot) => (
-                  <tr key={plot.id}>
-                    <td><strong>{plot.plotNumber}</strong></td>
-                    <td>{plot.sector}</td>
-                    <td>{plot.area}</td>
-                    <td>{formatPrice(plot.price)}</td>
-                    <td>{plot.facing}</td>
-                    <td>{plot.type}</td>
-                    <td>
-                      <span className={`status-pill ${plot.status.toLowerCase()}`}>
-                        {plot.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="admin-action-group">
-                        <button
-                          className={`action-btn available ${plot.status === 'available' ? 'active' : ''}`}
-                          onClick={() => handleStatusToggle(plot.id, 'available')}
-                        >
-                          Available
-                        </button>
-                        <button
-                          className={`action-btn booked ${plot.status === 'booked' ? 'active' : ''}`}
-                          onClick={() => handleStatusToggle(plot.id, 'booked')}
-                        >
-                          Booked
-                        </button>
-                        <button
-                          className={`action-btn sold ${plot.status === 'sold' ? 'active' : ''}`}
-                          onClick={() => handleStatusToggle(plot.id, 'sold')}
-                        >
-                          Sold
-                        </button>
-                      </div>
-                    </td>
+            {loading ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>Loading inventory...</div>
+            ) : (
+              <table className="inventory-table">
+                <thead>
+                  <tr>
+                    <th>Plot No.</th>
+                    <th>Sector</th>
+                    <th>Area (sq.ft)</th>
+                    <th>Price (₹)</th>
+                    <th>Facing</th>
+                    <th>Type</th>
+                    <th>Current Status</th>
+                    <th>Admin Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {plots.map((plot) => (
+                    <tr key={plot.id}>
+                      <td><strong>{plot.plotNumber}</strong></td>
+                      <td>{plot.sector}</td>
+                      <td>{plot.area}</td>
+                      <td>{formatPrice(plot.price)}</td>
+                      <td>{plot.facing}</td>
+                      <td>{plot.type}</td>
+                      <td>
+                        <span className={`status-pill ${plot.status.toLowerCase()}`}>
+                          {plot.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="admin-action-group">
+                          <button
+                            className={`action-btn available ${plot.status === 'available' ? 'active' : ''}`}
+                            onClick={() => handleStatusToggle(plot.id, 'available')}
+                          >
+                            Available
+                          </button>
+                          <button
+                            className={`action-btn booked ${plot.status === 'booked' ? 'active' : ''}`}
+                            onClick={() => handleStatusToggle(plot.id, 'booked')}
+                          >
+                            Booked
+                          </button>
+                          <button
+                            className={`action-btn sold ${plot.status === 'sold' ? 'active' : ''}`}
+                            onClick={() => handleStatusToggle(plot.id, 'sold')}
+                          >
+                            Sold
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>

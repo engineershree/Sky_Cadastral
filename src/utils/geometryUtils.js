@@ -20,15 +20,20 @@ export function calculateCentroid(coordinates) {
 /**
  * Converts 2D polygon coordinates [[x1, y1], [x2, y2]...] to THREE.Shape
  * Scales and centers appropriately for Three.js world space coordinates.
+ * Y is negated and coordinate sequence reversed so rotation [-PI/2, 0, 0]
+ * aligns local 2D shape extrusion to World 3D (x, height, +y) space.
  */
 export function coordinatesToThreeShape(coordinates, scale = 1, offset = { x: 0, y: 0 }) {
   const shape = new THREE.Shape();
 
   if (!coordinates || coordinates.length === 0) return shape;
 
-  coordinates.forEach(([x, y], index) => {
+  // Reverse coordinates to maintain counter-clockwise winding order when Y is negated
+  const points = [...coordinates].reverse();
+
+  points.forEach(([x, y], index) => {
     const worldX = (x - offset.x) * scale;
-    const worldY = (y - offset.y) * scale;
+    const worldY = -(y - offset.y) * scale;
 
     if (index === 0) {
       shape.moveTo(worldX, worldY);
@@ -53,16 +58,10 @@ export function coordinatesToSVGPath(coordinates) {
 
 /**
  * Formats price in Indian Rupees (INR)
- * Example: 4500000 -> ₹45,00,000 or ₹45 Lakhs
+ * Example: 4500000 -> ₹45,00,000
  */
 export function formatPrice(price) {
   if (!price) return '₹0';
-  if (price >= 10000000) {
-    return `₹${(price / 10000000).toFixed(2)} Cr`;
-  }
-  if (price >= 100000) {
-    return `₹${(price / 100000).toFixed(2)} Lakhs`;
-  }
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
@@ -71,27 +70,27 @@ export function formatPrice(price) {
 }
 
 /**
- * Returns color palette tokens for plot states
+ * Returns color palette tokens for plot states matching light architectural visual theme
  */
 export function getStatusTheme(status, isSelected = false, isHovered = false) {
   if (isSelected) {
     return {
-      fillColor: '#38bdf8',       // Glowing cyan/sky blue
-      borderColor: '#0284c7',
-      labelBg: '#0369a1',
+      fillColor: '#A67C27',     // Stitch Cadastral Gold highlight
+      borderColor: '#f59e0b',
+      labelBg: '#A67C27',
       textColor: '#ffffff',
-      extrusionHeight: 2.2,
-      opacity: 0.95
+      extrusionHeight: 0.35,
+      opacity: 0.98
     };
   }
 
   if (isHovered) {
     return {
-      fillColor: '#34d399',       // Vibrant emerald
-      borderColor: '#059669',
-      labelBg: '#047857',
+      fillColor: '#81c784',       // Pastel vibrant green
+      borderColor: '#2e7d32',
+      labelBg: '#2e7d32',
       textColor: '#ffffff',
-      extrusionHeight: 1.8,
+      extrusionHeight: 0.3,
       opacity: 0.95
     };
   }
@@ -99,39 +98,48 @@ export function getStatusTheme(status, isSelected = false, isHovered = false) {
   switch (status?.toLowerCase()) {
     case 'available':
       return {
-        fillColor: '#10b981',     // Elegant emerald green
-        borderColor: '#059669',
-        labelBg: '#065f46',
+        fillColor: '#43a047',     // Lush natural lawn green (Matching reference image)
+        borderColor: '#2e7d32',
+        labelBg: '#2e7d32',
         textColor: '#ffffff',
-        extrusionHeight: 1.2,
-        opacity: 0.9
+        extrusionHeight: 0.25,
+        opacity: 0.95
       };
     case 'booked':
       return {
-        fillColor: '#f59e0b',     // Warm amber/gold
-        borderColor: '#d97706',
-        labelBg: '#92400e',
+        fillColor: '#e57373',     // Soft rose pink (Matching reference B10)
+        borderColor: '#c62828',
+        labelBg: '#c62828',
         textColor: '#ffffff',
-        extrusionHeight: 0.8,
-        opacity: 0.6
+        extrusionHeight: 0.2,
+        opacity: 0.95
       };
     case 'sold':
       return {
-        fillColor: '#64748b',     // Dimmed slate gray
-        borderColor: '#475569',
-        labelBg: '#334155',
-        textColor: '#94a3b8',
-        extrusionHeight: 0.5,
-        opacity: 0.35
+        fillColor: '#78909c',     // Slate grey (Matching reference sold plots)
+        borderColor: '#455a64',
+        labelBg: '#37474f',
+        textColor: '#ffffff',
+        extrusionHeight: 0.15,
+        opacity: 0.95
+      };
+    case 'reserved':
+      return {
+        fillColor: '#fbc02d',     // Warm amber yellow
+        borderColor: '#f57f17',
+        labelBg: '#d97706',
+        textColor: '#0f172a',
+        extrusionHeight: 0.2,
+        opacity: 0.95
       };
     default:
       return {
-        fillColor: '#94a3b8',
-        borderColor: '#64748b',
-        labelBg: '#475569',
+        fillColor: '#43a047',
+        borderColor: '#2e7d32',
+        labelBg: '#2e7d32',
         textColor: '#ffffff',
-        extrusionHeight: 1.0,
-        opacity: 0.8
+        extrusionHeight: 0.25,
+        opacity: 0.95
       };
   }
 }

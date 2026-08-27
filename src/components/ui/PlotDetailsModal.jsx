@@ -1,6 +1,7 @@
 import React from 'react';
-import { X, CheckCircle, AlertCircle, Lock, Compass, Shield, Maximize2, Tag, Road } from 'lucide-react';
+import { X, CheckCircle2, Lock, Compass, Calendar, Maximize2, Tag, ShieldCheck } from 'lucide-react';
 import { formatPrice } from '../../utils/geometryUtils';
+import bannerImg from '../../assets/landing2.png';
 
 export default function PlotDetailsModal({
   plot,
@@ -14,118 +15,88 @@ export default function PlotDetailsModal({
   const isSold = plot.status?.toLowerCase() === 'sold';
 
   return (
-    <div className="plot-details-drawer">
-      <div className="drawer-header">
-        <div className="header-title-block">
-          <span className="plot-number-large">{plot.plotNumber}</span>
-          <span className={`status-pill ${plot.status.toLowerCase()}`}>
-            {isAvailable && <CheckCircle size={14} />}
-            {isBooked && <AlertCircle size={14} />}
-            {isSold && <Lock size={14} />}
-            {plot.status.toUpperCase()}
-          </span>
-        </div>
-        <button className="drawer-close-btn" onClick={onClose}>
-          <X size={20} />
+    <div className="plot-details-card">
+      <div className="card-header">
+        <h3>Plot Details</h3>
+        <button className="card-close-btn" onClick={onClose}>
+          <X size={18} />
         </button>
       </div>
 
-      <div className="drawer-body">
-        {/* Main Price Tag */}
-        <div className="price-card">
-          <span className="price-label">Total Price</span>
-          <span className="price-amount">{formatPrice(plot.price)}</span>
-          <span className="price-rate">Approx. ₹{Math.round(plot.price / plot.area)} / sq.ft</span>
-        </div>
-
-        {/* Key Features Grid */}
-        <div className="details-grid">
-          <div className="detail-item">
-            <div className="detail-icon-box">
-              <Maximize2 size={18} />
-            </div>
-            <div className="detail-info">
-              <span className="detail-label">Plot Area</span>
-              <span className="detail-value">{plot.area} sq.ft</span>
-            </div>
-          </div>
-
-          <div className="detail-item">
-            <div className="detail-icon-box">
-              <Compass size={18} />
-            </div>
-            <div className="detail-info">
-              <span className="detail-label">Facing Direction</span>
-              <span className="detail-value">{plot.facing}</span>
-            </div>
-          </div>
-
-          <div className="detail-item">
-            <div className="detail-icon-box">
-              <Tag size={18} />
-            </div>
-            <div className="detail-info">
-              <span className="detail-label">Plot Type</span>
-              <span className="detail-value">{plot.type || 'Regular'}</span>
-            </div>
-          </div>
-
-          <div className="detail-item">
-            <div className="detail-icon-box">
-              <Road size={18} />
-            </div>
-            <div className="detail-info">
-              <span className="detail-label">Road Width</span>
-              <span className="detail-value">{plot.roadWidth || '30 ft Road'}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Plot Specifications List */}
-        <div className="specs-section">
-          <h4>Property Specifications</h4>
-          <div className="spec-row">
-            <span>Dimensions</span>
-            <strong>{plot.dimensions || "35' x 40'"}</strong>
-          </div>
-          <div className="spec-row">
-            <span>Sector / Zone</span>
-            <strong>{plot.sector || 'Sector A'}</strong>
-          </div>
-          <div className="spec-row">
-            <span>Zoning Approval</span>
-            <strong>N.A. Sanctioned (Residential)</strong>
-          </div>
-          <div className="spec-row">
-            <span>Land Clearance</span>
-            <strong>Clear Title 7/12 Extract</strong>
-          </div>
-        </div>
-
-        {/* Description */}
-        <div className="description-section">
-          <h4>Plot Overview</h4>
-          <p>{plot.description || 'Prime plot in Sky Cadastral Master Plan Phase 1 with excellent legal clearance and infrastructure.'}</p>
-        </div>
-
-        {/* Highlights */}
-        <div className="badges-list">
-          <span className="badge-chip">✅ Demarcated Boundary</span>
-          <span className="badge-chip">✅ Water & Electric Point</span>
-          <span className="badge-chip">✅ Bank Loan Approved</span>
-        </div>
+      {/* Hero Visual Image Banner using landing2.png */}
+      <div className="hero-preview-box">
+        <img src={bannerImg} alt={`Plot ${plot.plotNumber} Architectural Preview`} className="plot-drawer-banner-img" />
+        <div className="banner-overlay-gradient"></div>
+        <div className="banner-plot-badge">{plot.plotNumber} • SURVEY GAT NO. 142/A</div>
       </div>
 
-      {/* Action Footer */}
-      <div className="drawer-footer">
+      <div className="card-body">
+        {/* Title & Status Badge */}
+        <div className="title-status-row">
+          <h2 className="plot-title-large">{plot.plotNumber}</h2>
+          <span className={`status-badge-pill ${plot.status.toLowerCase()}`}>
+            {plot.status.charAt(0).toUpperCase() + plot.status.slice(1)}
+          </span>
+        </div>
+
+        {/* Specifications Grid */}
+        <div className="specs-icon-grid">
+          <div className="spec-item">
+            <div className="icon-box orange">
+              <Maximize2 size={16} />
+            </div>
+            <div className="spec-text">
+              <span className="spec-lbl">Area</span>
+              <strong className="spec-val">{plot.area} sq.ft</strong>
+            </div>
+          </div>
+
+          <div className="spec-item">
+            <div className="icon-box orange">
+              <Compass size={16} />
+            </div>
+            <div className="spec-text">
+              <span className="spec-lbl">Facing</span>
+              <strong className="spec-val">{plot.facing}</strong>
+            </div>
+          </div>
+
+          <div className="spec-item full-width">
+            <div className="icon-box orange">
+              <Tag size={16} />
+            </div>
+            <div className="spec-text">
+              <span className="spec-lbl">Price</span>
+              <strong className="spec-val price-highlight">{formatPrice(plot.price)}</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* Features List */}
+        <div className="features-checklist">
+          <div className="feature-row">
+            <CheckCircle2 className="check-icon" size={16} />
+            <span>Prime Location</span>
+          </div>
+          <div className="feature-row">
+            <CheckCircle2 className="check-icon" size={16} />
+            <span>Wide Road Access</span>
+          </div>
+          <div className="feature-row">
+            <CheckCircle2 className="check-icon" size={16} />
+            <span>Secure Gated Community</span>
+          </div>
+        </div>
+
+        {/* Action Button */}
         {isAvailable ? (
-          <button className="book-now-btn" onClick={() => onOpenBooking(plot)}>
-            <Shield size={18} />
-            <span>Book Now ({plot.plotNumber})</span>
+          <button className="book-now-gold-btn" onClick={() => onOpenBooking(plot)}>
+            <Calendar size={18} />
+            <span>Book Now</span>
           </button>
         ) : (
-          <div className="unavailable-banner">
-            <Lock size={18} />
+          <div className="unavailable-btn-banner">
+            <Lock size={16} />
             <span>CURRENTLY UNAVAILABLE ({plot.status.toUpperCase()})</span>
           </div>
         )}

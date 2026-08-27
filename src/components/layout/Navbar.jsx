@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Compass, Map, ShieldCheck, Phone, LayoutDashboard } from 'lucide-react';
+import { Phone, Map, ShieldCheck } from 'lucide-react';
+import logoImg from '../../assets/logo.jpeg';
 
 export default function Navbar() {
   const location = useLocation();
@@ -10,14 +11,16 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <div className="nav-container">
+        {/* Brand Logo & Title */}
         <Link to="/" className="nav-brand">
-          <Compass className="brand-icon" />
+          <img src={logoImg} alt="Sky Cadastral Logo" className="brand-logo-img" />
           <div className="brand-text">
-            <span className="brand-title">Sky Cadastral</span>
-            <span className="brand-tagline">3D Land Plotting & Mapping</span>
+            <span className="brand-title">SKY CADASTRAL</span>
+            <span className="brand-tagline">Land Survey & Mapping Services</span>
           </div>
         </Link>
 
+        {/* Center Navigation Links */}
         <div className="nav-links">
           <Link
             to="/"
@@ -29,23 +32,36 @@ export default function Navbar() {
             to="/plots"
             className={`nav-link ${isActive('/plots') ? 'active' : ''}`}
           >
-            <Map className="link-icon" />
-            Explore 3D Plots
+            Plots Explorer
           </Link>
+          <a href="/#services" className="nav-link">
+            Services
+          </a>
+          <a href="/#about" className="nav-link">
+            About Us
+          </a>
+          <a href="/#contact" className="nav-link">
+            Contact
+          </a>
           <Link
             to="/admin"
-            className={`nav-link ${isActive('/admin') ? 'active' : ''}`}
+            className={`nav-link admin-link ${isActive('/admin') ? 'active' : ''}`}
           >
-            <LayoutDashboard className="link-icon" />
-            Demo Admin
+            Admin
           </Link>
         </div>
 
+        {/* Right Phone & CTA Button */}
         <div className="nav-actions">
-          <a href="tel:8600104192" className="nav-call-btn">
-            <Phone className="call-icon" />
+          <a href="tel:8600104192" className="nav-phone">
+            <Phone className="phone-icon" size={16} />
             <span>8600104192</span>
           </a>
+
+          <Link to="/plots" className="nav-cta-btn">
+            <Map size={16} />
+            <span>Explore 3D Plots</span>
+          </Link>
         </div>
       </div>
     </nav>

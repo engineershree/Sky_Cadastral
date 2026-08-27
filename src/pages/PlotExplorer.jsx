@@ -1,24 +1,41 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Navbar from '../components/layout/Navbar';
 import PlotViewer3D from '../components/viewer/PlotViewer3D';
 import PlotViewer2D from '../components/viewer/PlotViewer2D';
 import SearchAndFilter from '../components/ui/SearchAndFilter';
 import PlotDetailsModal from '../components/ui/PlotDetailsModal';
 import BookingModal from '../components/ui/BookingModal';
-import { INITIAL_PLOTS_DATA, LAYOUT_METADATA } from '../data/plots';
-import { MapPin, Info, CheckCircle2, Shield } from 'lucide-react';
+import { plotService } from '../services/plotService';
 
 export default function PlotExplorer() {
-  const [plots, setPlots] = useState(INITIAL_PLOTS_DATA);
+  const [plots, setPlots] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedPlotId, setSelectedPlotId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [facingFilter, setFacingFilter] = useState('ALL');
   const [viewMode, setViewMode] = useState('3D'); // '3D' or '2D'
+  const [cameraPreset, setCameraPreset] = useState('3D'); // '3D' (45° Aerial) or 'TOP'
+  const [zoomCommand, setZoomCommand] = useState(null); // 'IN', 'OUT', 'RESET', 'FIT'
   const [bookingTargetPlot, setBookingTargetPlot] = useState(null);
   const [searchError, setSearchError] = useState('');
 
-  // Calculate live plot counts
+  // Fetch canonical plot dataset on mount via plotService
+  useEffect(() => {
+    async function loadPlotData() {
+      try {
+        const data = await plotService.getPlots();
+        setPlots(data);
+      } catch (err) {
+        console.error('Error loading canonical plot layout data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadPlotData();
+  }, []);
+
+  // Calculate live plot status counts
   const counts = useMemo(() => {
     const all = plots.length;
     const available = plots.filter((p) => p.status.toLowerCase() === 'available').length;
@@ -60,95 +77,89 @@ export default function PlotExplorer() {
     }
   };
 
-  // Handle Booking Confirmation in Demo State
-  const handleConfirmBooking = (plotId, bookingDetails) => {
-    setPlots((prevPlots) =>
-      prevPlots.map((p) =>
-        p.id === plotId ? { ...p, status: 'booked' } : p
-      )
-    );
+  // Handle Booking Confirmation Sync
+  const handleConfirmBooking = async (plotId) => {
+    const updatedPlots = await plotService.getPlots();
+    setPlots(updatedPlots);
   };
 
+  // Navigation commands
+  const handleResetCamera = useCallback(() => {
+    setSelectedPlotId(null);
+    setCameraPreset('3D');
+    setZoomCommand('RESET');
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    setZoomCommand('IN');
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setZoomCommand('OUT');
+  }, []);
+
+  const handleFullView = useCallback(() => {
+    setSelectedPlotId(null);
+    setZoomCommand('FIT');
+  }, []);
+
+  const handleCommandHandled = useCallback(() => {
+    setZoomCommand(null);
+  }, []);
+
   const selectedPlot = plots.find((p) => p.id === selectedPlotId);
-
-  // Filtered plots list
-  const filteredPlots = useMemo(() => {
-    return plots.filter((p) => {
-      const matchStatus =
-        statusFilter === 'ALL' ||
-        p.status.toUpperCase() === statusFilter.toUpperCase();
-
-      const matchFacing =
-        facingFilter === 'ALL' ||
-        p.facing.toLowerCase().includes(facingFilter.toLowerCase());
-
-      return matchStatus && matchFacing;
-    });
-  }, [plots, statusFilter, facingFilter]);
 
   return (
     <div className="explorer-page-wrapper">
       <Navbar />
 
-      {/* Explorer Sub-Header */}
-      <div className="explorer-header">
-        <div className="layout-info-block">
-          <h2>{LAYOUT_METADATA.name}</h2>
-          <p>
-            <MapPin size={16} />
-            <span>{LAYOUT_METADATA.location} • {LAYOUT_METADATA.surveyNumber}</span>
-          </p>
-        </div>
-
-        <div className="layout-stats-strip">
-          <div className="stat-pill">
-            <span className="stat-num">{counts.available}</span>
-            <span className="stat-lbl">Available</span>
-          </div>
-          <div className="stat-pill">
-            <span className="stat-num warning">{counts.booked}</span>
-            <span className="stat-lbl">Booked</span>
-          </div>
-          <div className="stat-pill">
-            <span className="stat-num muted">{counts.sold}</span>
-            <span className="stat-lbl">Sold</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Search & Filter Toolbar */}
-      <SearchAndFilter
-        searchQuery={searchQuery}
-        onSearchChange={handleSearchChange}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
-        facingFilter={facingFilter}
-        onFacingFilterChange={setFacingFilter}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        counts={counts}
-        searchError={searchError}
-      />
-
-      {/* Main Canvas Viewport Area */}
+      {/* Main Full-Screen Viewport Area */}
       <div className="viewport-main-wrapper">
-        {viewMode === '3D' ? (
+        {loading ? (
+          <div className="loading-viewport">
+            <span>Loading Master Plan Cadastral Scene...</span>
+          </div>
+        ) : viewMode === '3D' ? (
           <PlotViewer3D
-            plots={filteredPlots}
+            plots={plots}
             selectedPlotId={selectedPlotId}
             onSelectPlot={handleSelectPlot}
             statusFilter={statusFilter}
+            facingFilter={facingFilter}
+            cameraPreset={cameraPreset}
+            zoomCommand={zoomCommand}
+            onCommandHandled={handleCommandHandled}
+            onResetCamera={handleResetCamera}
           />
         ) : (
           <PlotViewer2D
-            plots={filteredPlots}
+            plots={plots}
             selectedPlotId={selectedPlotId}
             onSelectPlot={handleSelectPlot}
             statusFilter={statusFilter}
+            facingFilter={facingFilter}
+            zoomCommand={zoomCommand}
+            onCommandHandled={handleCommandHandled}
           />
         )}
 
-        {/* Selected Plot Details Modal Drawer */}
+        {/* Floating Controls, Search, Filter Pills & Legend Overlays */}
+        <SearchAndFilter
+          searchQuery={searchQuery}
+          onSearchChange={handleSearchChange}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          counts={counts}
+          searchError={searchError}
+          onResetCamera={handleResetCamera}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onFullView={handleFullView}
+        />
+
+        {/* Floating Right Plot Details Drawer */}
         {selectedPlot && (
           <PlotDetailsModal
             plot={selectedPlot}

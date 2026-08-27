@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import * as THREE from 'three';
+import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { calculateCentroid, coordinatesToThreeShape, getStatusTheme, formatPrice } from '../../utils/geometryUtils';
 
@@ -10,8 +11,15 @@ export default function PlotMesh({
   isDimmed = false
 }) {
   const [isHovered, setIsHovered] = useState(false);
+  const [zoomTier, setZoomTier] = useState('FAR'); // 'FAR', 'MEDIUM', 'CLOSE'
+  const zoomTierRef = useRef('FAR');
+  const pointerDownPosRef = useRef({ x: 0, y: 0 });
+
+  const meshRef = useRef();
+  const currentLiftRef = useRef(0);
 
   const centroid = useMemo(() => calculateCentroid(plot.coordinates), [plot.coordinates]);
+  const centroidVector = useMemo(() => new THREE.Vector3(centroid[0], 0, centroid[1]), [centroid]);
 
   const shape = useMemo(() => {
     return coordinatesToThreeShape(plot.coordinates);
@@ -25,21 +33,60 @@ export default function PlotMesh({
     steps: 1,
     depth: theme.extrusionHeight,
     bevelEnabled: true,
-    bevelThickness: 0.15,
-    bevelSize: 0.15,
+    bevelThickness: 0.04,
+    bevelSize: 0.04,
     bevelSegments: 2
   }), [theme.extrusionHeight]);
 
-  // Edges geometry for sharp CAD outline
+  // Edges geometry for sharp CAD wireframe boundary outline
   const edgesGeometry = useMemo(() => {
     const geom = new THREE.ExtrudeGeometry(shape, extrudeSettings);
     return new THREE.EdgesGeometry(geom);
   }, [shape, extrudeSettings]);
 
-  const effectiveOpacity = isDimmed && !isSelected ? theme.opacity * 0.4 : theme.opacity;
+  // Frame update for smooth vertical animation & throttled distance tier calculation
+  useFrame((state, delta) => {
+    // Measure distance from camera to plot centroid without triggering React re-renders unless tier changes
+    const dist = state.camera.position.distanceTo(centroidVector);
+    const newTier = dist > 170 ? 'FAR' : dist > 100 ? 'MEDIUM' : 'CLOSE';
+    if (zoomTierRef.current !== newTier) {
+      zoomTierRef.current = newTier;
+      setZoomTier(newTier);
+    }
+
+    const targetLift = isSelected ? 0.35 : isHovered ? 0.15 : 0;
+    currentLiftRef.current = THREE.MathUtils.lerp(currentLiftRef.current, targetLift, delta * 10);
+    if (meshRef.current) {
+      meshRef.current.position.y = currentLiftRef.current;
+    }
+  });
+
+  const effectiveOpacity = isDimmed && !isSelected ? theme.opacity * 0.35 : theme.opacity;
+
+  // Zoom-dependent label detail determination
+  const isZoomedOut = zoomTier === 'FAR';
+  const isMediumZoom = zoomTier === 'MEDIUM';
+  const isCloseZoom = zoomTier === 'CLOSE' || isSelected;
+
+  const handlePointerDown = (e) => {
+    pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handlePointerUp = (e) => {
+    e.stopPropagation();
+    const dx = e.clientX - pointerDownPosRef.current.x;
+    const dy = e.clientY - pointerDownPosRef.current.y;
+    const dist = Math.hypot(dx, dy);
+
+    // Only select plot if movement is below drag threshold (6px)
+    if (dist < 6) {
+      onSelectPlot(plot);
+    }
+  };
 
   return (
     <group
+      ref={meshRef}
       onPointerOver={(e) => {
         e.stopPropagation();
         setIsHovered(true);
@@ -50,18 +97,16 @@ export default function PlotMesh({
         setIsHovered(false);
         document.body.style.cursor = 'default';
       }}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelectPlot(plot);
-      }}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
     >
-      {/* 3D Extruded Plot Mesh */}
+      {/* 3D Real-Estate Plot Extruded Mesh */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow castShadow>
         <extrudeGeometry args={[shape, extrudeSettings]} />
         <meshStandardMaterial
           color={theme.fillColor}
-          roughness={0.3}
-          metalness={0.1}
+          roughness={0.5}
+          metalness={0.05}
           transparent={true}
           opacity={effectiveOpacity}
           polygonOffset={true}
@@ -70,34 +115,53 @@ export default function PlotMesh({
         />
       </mesh>
 
-      {/* CAD Boundary Wireframe Edges */}
+      {/* CAD Boundary Line Trim */}
       <lineSegments rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <primitive object={edgesGeometry} attach="geometry" />
         <lineBasicMaterial
-          color={isSelected ? '#0284c7' : isHovered ? '#047857' : theme.borderColor}
-          linewidth={isSelected || isHovered ? 3 : 1.5}
+          color={isSelected ? '#f59e0b' : isHovered ? '#ffffff' : theme.borderColor}
+          linewidth={isSelected ? 2.5 : isHovered ? 1.8 : 0.8}
         />
       </lineSegments>
 
-      {/* Floating 3D Plot Label */}
+      {/* Floating 3D Plot Badge with Zoom-Dependent Detail */}
       <Html
-        position={[centroid[0], theme.extrusionHeight + 0.8, centroid[1]]}
+        position={[centroid[0], theme.extrusionHeight + 0.5 + currentLiftRef.current, centroid[1]]}
         center
-        distanceFactor={60}
+        distanceFactor={70}
         zIndexRange={[100, 0]}
       >
         <div
           className={`plot-3d-badge ${plot.status.toLowerCase()} ${isSelected ? 'selected' : ''} ${isHovered ? 'hovered' : ''}`}
-          onClick={(e) => {
+          onMouseDown={(e) => {
+            pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
+          }}
+          onMouseUp={(e) => {
             e.stopPropagation();
-            onSelectPlot(plot);
+            const dx = e.clientX - pointerDownPosRef.current.x;
+            const dy = e.clientY - pointerDownPosRef.current.y;
+            if (Math.hypot(dx, dy) < 6) {
+              onSelectPlot(plot);
+            }
           }}
         >
           <span className="badge-plot-num">{plot.plotNumber}</span>
+
+          {/* Medium Zoom Detail: Area */}
+          {isMediumZoom && !isZoomedOut && (
+            <span className="badge-plot-sub">{plot.area} sq.ft</span>
+          )}
+
+          {/* Close Zoom Detail: Area + Facing */}
+          {isCloseZoom && (
+            <span className="badge-plot-sub">{plot.area} sq.ft • {plot.facing}</span>
+          )}
+
+          {/* Hover / Select Detailed Tooltip Overlay */}
           {(isHovered || isSelected) && (
             <div className="badge-hover-tooltip">
               <span className="tooltip-status">{plot.status.toUpperCase()}</span>
-              <span className="tooltip-area">{plot.area} sq.ft</span>
+              <span className="tooltip-area">{plot.area} sq.ft • {plot.facing}</span>
               <span className="tooltip-price">{formatPrice(plot.price)}</span>
             </div>
           )}
@@ -106,3 +170,4 @@ export default function PlotMesh({
     </group>
   );
 }
+
