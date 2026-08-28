@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Sky Cadastral - Admin Dashboard</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "on-primary-fixed": "#011c3b",
+                "tertiary": "#000000",
+                "on-secondary-container": "#765300",
+                "secondary-fixed": "#ffdea8",
+                "on-error": "#ffffff",
+                "primary-container": "#011c3b",
+                "tertiary-container": "#331200",
+                "surface-tint": "#495f82",
+                "secondary-fixed-dim": "#f0bf63",
+                "on-error-container": "#93000a",
+                "on-primary-fixed-variant": "#314768",
+                "outline-variant": "#c4c6cf",
+                "primary": "#000000",
+                "on-tertiary-fixed": "#331200",
+                "surface-container-high": "#e9e7eb",
+                "inverse-primary": "#b1c8ef",
+                "on-tertiary-container": "#ae7759",
+                "surface-container-low": "#f5f3f6",
+                "surface-dim": "#dbd9dd",
+                "surface-variant": "#e3e2e5",
+                "primary-fixed-dim": "#b1c8ef",
+                "surface-container-lowest": "#ffffff",
+                "inverse-surface": "#303033",
+                "tertiary-fixed-dim": "#f9b896",
+                "on-secondary-fixed-variant": "#5e4200",
+                "on-primary": "#ffffff",
+                "on-tertiary-fixed-variant": "#683c22",
+                "deep-navy": "#001B3A",
+                "on-tertiary": "#ffffff",
+                "error-container": "#ffdad6",
+                "precision-amber": "#C4953B",
+                "background": "#faf9fc",
+                "surface": "#faf9fc",
+                "on-secondary": "#ffffff",
+                "surface-bright": "#faf9fc",
+                "on-surface": "#1b1b1e",
+                "primary-fixed": "#d5e3ff",
+                "on-background": "#1b1b1e",
+                "paper-white": "#FFFFFF",
+                "inverse-on-surface": "#f2f0f3",
+                "outline": "#74777f",
+                "blueprint-gray": "#E5E9EB",
+                "on-primary-container": "#6f85a9",
+                "on-secondary-fixed": "#271900",
+                "on-surface-variant": "#44474e",
+                "error": "#ba1a1a",
+                "surface-container-highest": "#e3e2e5",
+                "cadastral-gold": "#A67C27",
+                "secondary": "#7c5800",
+                "surface-container": "#efedf0",
+                "tertiary-fixed": "#ffdbca",
+                "secondary-container": "#fdca6d"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.25rem",
+                "lg": "0.5rem",
+                "xl": "0.75rem",
+                "full": "9999px"
+        },
+        "spacing": {
+                "component-gap": "1rem",
+                "section-gap": "4rem",
+                "margin-mobile": "20px",
+                "gutter": "24px",
+                "base": "8px",
+                "margin-desktop": "64px"
+        },
+        "fontFamily": {
+                "body-sm": [
+                        "Inter"
+                ],
+                "headline-lg": [
+                        "Inter"
+                ],
+                "title-md": [
+                        "Inter"
+                ],
+                "label-technical": [
+                        "Inter"
+                ],
+                "body-lg": [
+                        "Inter"
+                ],
+                "label-caps": [
+                        "Inter"
+                ],
+                "display-lg": [
+                        "Inter"
+                ],
+                "headline-lg-mobile": [
+                        "Inter"
+                ]
+        },
+        "fontSize": {
+                "body-sm": [
+                        "14px",
+                        {
+                                "lineHeight": "20px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "headline-lg": [
+                        "32px",
+                        {
+                                "lineHeight": "40px",
+                                "letterSpacing": "0.01em",
+                                "fontWeight": "700"
+                        }
+                ],
+                "title-md": [
+                        "20px",
+                        {
+                                "lineHeight": "28px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "label-technical": [
+                        "11px",
+                        {
+                                "lineHeight": "14px",
+                                "letterSpacing": "0.05em",
+                                "fontWeight": "500"
+                        }
+                ],
+                "body-lg": [
+                        "16px",
+                        {
+                                "lineHeight": "24px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "label-caps": [
+                        "12px",
+                        {
+                                "lineHeight": "16px",
+                                "letterSpacing": "0.15em",
+                                "fontWeight": "700"
+                        }
+                ],
+                "display-lg": [
+                        "48px",
+                        {
+                                "lineHeight": "56px",
+                                "letterSpacing": "-0.02em",
+                                "fontWeight": "800"
+                        }
+                ],
+                "headline-lg-mobile": [
+                        "24px",
+                        {
+                                "lineHeight": "32px",
+                                "fontWeight": "700"
+                        }
+                ]
+        }
+},
+    },
+  }
+</script>
+<style>
+        /* Custom Styles for Sharp Edges and Depth */
+        .elite-shadow {
+            box-shadow: 0 10px 30px -10px rgba(0, 27, 58, 0.08), 0 4px 6px -4px rgba(0, 27, 58, 0.04);
+        }
+        .shear-accent::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 0 40px 40px 0;
+            border-color: transparent #A67C27 transparent transparent; /* Cadastral Gold */
+            z-index: 10;
+        }
+        
+        /* Layout Structure */
+        body {
+            display: flex;
+            min-height: 100vh;
+            background-color: #faf9fc; /* background */
+            color: #1b1b1e; /* on-background */
+        }
+        #sidebar {
+            width: 280px;
+            flex-shrink: 0;
+            background: linear-gradient(180deg, #001B3A 0%, #001229 100%); /* Refined subtle gradient */
+            color: #FFFFFF; /* paper-white */
+            border-right: 1px solid rgba(229, 233, 235, 0.1);
+            display: flex;
+            flex-col;
+        }
+        #main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+        
+        /* Table Styles */
+        .data-table th {
+            color: #6f85a9;
+            text-align: left;
+            padding: 16px 24px;
+            font-family: 'Inter', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            border-bottom: 1px solid #E5E9EB;
+        }
+        .data-table td {
+            padding: 20px 24px;
+            border-bottom: 1px solid #f2f0f3;
+            background-color: #FFFFFF;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            color: #1b1b1e;
+        }
+        .data-table tr:hover td {
+            background-color: #faf9fc;
+        }
+        
+        /* Status Tags */
+        .status-tag {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-family: 'Inter', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        .status-success {
+            background-color: rgba(166, 124, 39, 0.1);
+            color: #A67C27;
+        }
+        .status-pending {
+            background-color: rgba(0, 27, 58, 0.05);
+            color: #001B3A;
+        }
+        .status-drafting {
+            background-color: #f2f0f3;
+            color: #74777f;
+        }
+    </style>
+</head>
+<body class="font-body-lg text-body-lg antialiased">
+<!-- Sidebar -->
+<aside class="hidden md:flex flex-col h-screen sticky top-0" id="sidebar">
+<!-- Brand Area -->
+<div class="p-8 flex items-center gap-4"><img alt="Sky Cadastral Logo" class="w-8 h-8 object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAvXmyFmgu-s3aESB21oPW6Dh9dCLcAGdkNby0nA7G49ZWS-qo2bTnPq-yukmUeYATLMF3U5yK0XNOYxvKUdY0dXceN8VQPIJkq0WRCA4EtYYcmt_6YiSzzZhqzS2iNwdFCPqXRaQpvip460Jddh0fGqxBXgqKZ8mBHv4i9Po8YmLGTAfoEpyMCDrpZTAgXilOav3Gq8xP99v9X8l50tEPg5SvXF1Aqq_m70DR3uyd6_DYvYhtKOfNIY3V-GvxHKV9H89c"/><span class="font-display-lg text-[22px] leading-tight font-black uppercase tracking-widest text-paper-white">Sky Cadastral</span></div>
+<!-- Navigation -->
+<nav class="flex-1 px-4 py-4 space-y-1">
+<!-- Active State -->
+<a class="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-[rgba(166,124,39,0.15)] to-transparent rounded-r-lg border-l-2 border-cadastral-gold text-cadastral-gold font-body-sm font-semibold transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" data-weight="fill" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-paper-white opacity-60 hover:opacity-100 hover:bg-white/5 rounded-r-lg transition-all font-body-sm font-medium" href="#">
+<span class="material-symbols-outlined text-[20px]">folder_open</span>
+                Project Management
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-paper-white opacity-60 hover:opacity-100 hover:bg-white/5 rounded-r-lg transition-all font-body-sm font-medium" href="#">
+<span class="material-symbols-outlined text-[20px]">group</span>
+                Client Database
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-paper-white opacity-60 hover:opacity-100 hover:bg-white/5 rounded-r-lg transition-all font-body-sm font-medium" href="#">
+<span class="material-symbols-outlined text-[20px]">receipt_long</span>
+                Billing
+            </a>
+<div class="pt-8 mt-8 border-t border-white/10">
+<a class="flex items-center gap-3 px-4 py-3 text-paper-white opacity-60 hover:opacity-100 hover:bg-white/5 rounded-r-lg transition-all font-body-sm font-medium" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+                    Settings
+                </a>
+</div>
+</nav>
+<!-- User Area -->
+<div class="p-6 border-t border-white/10 bg-white/5">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden ring-2 ring-white/10 ring-offset-2 ring-offset-[#001229]">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a mature male engineering manager with short gray hair and glasses, wearing a sharp navy blue collared shirt. The lighting is studio quality with a crisp white background. High resolution, corporate modern aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCKEbT-uIJi_QETpg2XEco4v4qg5z-fsO_HMAO4WuEH-8OXe8ZoPzX9077w0ZbNo9LGMSfMKauGZ5gKiHgWDIcMT9RClsWF5hEotjqMyZOowUul2X99csb3QevQAfHzycawMqPMqNjXmV0SHWPIA1WA4vMuOwqnFxhr8eVEg7nelQvmOGPL4tKeHeCPft6KkMmjzFm5ijddt5n75dghShcfzaw7FX6-tBuYru2wCtE5AJ49NrAfjUQdJg"/>
+</div>
+<div>
+<p class="font-body-sm text-paper-white font-semibold">Robert H.</p>
+<p class="text-[11px] font-medium text-paper-white opacity-50 uppercase tracking-wider mt-0.5">Chief Surveyor</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="bg-background min-h-screen" id="main-content">
+<!-- Mobile Header (Visible only on md:hidden) -->
+<header class="md:hidden bg-deep-navy text-paper-white p-4 flex justify-between items-center sticky top-0 z-50">
+<div class="flex items-center gap-2"><img alt="Sky Cadastral Logo" class="w-8 h-8 object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDBLsiGfSAddSp780qAdqaYP-g4Ir_y2OatfyXp8d3-vtsS_1Nbs79gHWNoNyWM6WcV_q_aH8JW52SgsImH3nFXGjgOKB3SwsmhxipdGCHKvexNcZk0cK0pr0C3l5n0NWGuiU2aReilkYPuida2omFPxqFQZWLGjC_U8xk8-V7H6B1HZKdwvI12DTsaD-RQ-fHO8HHV9Yej-DYMXDhKSpu_rGF-jiCdhbTl6NhJAnx4NgXKS2WNbTOr_alWP5CJTgUBfxc"/><span class="font-headline-lg-mobile uppercase tracking-tighter text-paper-white">Sky Cadastral</span></div>
+<button class="text-paper-white">
+<span class="material-symbols-outlined text-3xl">menu</span>
+</button>
+</header>
+<!-- Top App Bar (Content Area Header) -->
+<header class="bg-paper-white border-b border-blueprint-gray/50 h-[88px] px-10 flex justify-between items-center sticky top-0 z-40">
+<div>
+<h1 class="font-headline-lg text-[28px] font-bold text-deep-navy tracking-tight">Overview</h1>
+<p class="text-[14px] text-outline mt-1 font-medium">Q3 Performance Dashboard</p>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative hidden lg:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 transform -translate-y-1/2 text-outline/60 text-[20px]">search</span>
+<input class="pl-10 pr-4 py-2.5 bg-surface rounded-full border border-blueprint-gray/60 focus:border-cadastral-gold focus:ring-1 focus:ring-cadastral-gold focus:bg-white outline-none w-[280px] text-sm transition-all shadow-sm" placeholder="Search projects..." type="text"/>
+</div>
+<button class="relative p-2 text-outline hover:text-deep-navy transition-colors">
+<span class="material-symbols-outlined text-[22px]">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full ring-2 ring-white"></span>
+</button>
+<button class="bg-deep-navy text-paper-white px-5 py-2.5 rounded shadow-md hover:shadow-lg font-body-sm font-semibold flex items-center gap-2 hover:bg-[#002652] transition-all duration-200">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                    New Project
+                </button>
+</div>
+</header>
+<!-- Dashboard Canvas -->
+<div class="p-8 lg:p-10 max-w-[1440px] mx-auto w-full space-y-12">
+<!-- Stats Bento Grid -->
+<section>
+<div class="flex items-center gap-3 mb-6">
+<h2 class="font-title-md text-[16px] text-deep-navy font-bold uppercase tracking-[0.1em]">Key Metrics</h2>
+<div class="h-px bg-blueprint-gray/60 flex-grow ml-4"></div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+<!-- Stat 1 -->
+<div class="bg-paper-white rounded-lg border border-blueprint-gray/40 p-6 relative shear-accent elite-shadow group hover:-translate-y-1 transition-all duration-300">
+<div class="flex justify-between items-start mb-6">
+<div class="w-10 h-10 rounded-full bg-deep-navy/5 flex items-center justify-center text-deep-navy">
+<span class="material-symbols-outlined text-[20px]">map</span>
+</div>
+<span class="font-label-technical text-cadastral-gold bg-cadastral-gold/10 px-2 py-1 rounded flex items-center gap-1 font-bold">
+<span class="material-symbols-outlined text-[14px]">trending_up</span> +12%
+                            </span>
+</div>
+<p class="text-[13px] font-semibold text-outline uppercase tracking-wider mb-1">Total Projects</p>
+<p class="font-display-lg text-[40px] font-extrabold text-deep-navy leading-none">1,248</p>
+</div>
+<!-- Stat 2 -->
+<div class="bg-paper-white rounded-lg border border-blueprint-gray/40 p-6 relative elite-shadow group hover:-translate-y-1 transition-all duration-300">
+<!-- Vertical Accent -->
+<div class="absolute left-0 top-6 bottom-6 w-1 bg-deep-navy rounded-r"></div>
+<div class="flex justify-between items-start mb-6">
+<div class="w-10 h-10 rounded-full bg-cadastral-gold/10 flex items-center justify-center text-cadastral-gold">
+<span class="material-symbols-outlined text-[20px]">engineering</span>
+</div>
+<span class="font-label-technical text-outline bg-surface-variant/50 px-2 py-1 rounded flex items-center gap-1 font-bold">
+<span class="material-symbols-outlined text-[14px]">horizontal_rule</span> 0%
+                            </span>
+</div>
+<p class="text-[13px] font-semibold text-outline uppercase tracking-wider mb-1 pl-2">Pending Surveys</p>
+<p class="font-display-lg text-[40px] font-extrabold text-deep-navy leading-none pl-2">42</p>
+</div>
+<!-- Stat 3 -->
+<div class="bg-paper-white rounded-lg border border-blueprint-gray/40 p-6 relative elite-shadow group hover:-translate-y-1 transition-all duration-300">
+<div class="flex justify-between items-start mb-6">
+<div class="w-10 h-10 rounded-full bg-deep-navy/5 flex items-center justify-center text-deep-navy">
+<span class="material-symbols-outlined text-[20px]">contact_mail</span>
+</div>
+<span class="font-label-technical text-cadastral-gold bg-cadastral-gold/10 px-2 py-1 rounded flex items-center gap-1 font-bold">
+<span class="material-symbols-outlined text-[14px]">trending_up</span> +5%
+                            </span>
+</div>
+<p class="text-[13px] font-semibold text-outline uppercase tracking-wider mb-1">Client Inquiries</p>
+<p class="font-display-lg text-[40px] font-extrabold text-deep-navy leading-none">89</p>
+</div>
+<!-- Stat 4 -->
+<div class="bg-paper-white rounded-lg border border-blueprint-gray/40 border-t-[3px] border-t-cadastral-gold p-6 relative elite-shadow group hover:-translate-y-1 transition-all duration-300">
+<div class="flex justify-between items-start mb-6">
+<div class="w-10 h-10 rounded-full bg-deep-navy flex items-center justify-center text-paper-white shadow-md">
+<span class="material-symbols-outlined text-[20px]">attach_money</span>
+</div>
+</div>
+<p class="text-[13px] font-semibold text-outline uppercase tracking-wider mb-1">Q3 Revenue</p>
+<p class="font-display-lg text-[40px] font-extrabold text-deep-navy leading-none">$1.2M</p>
+<div class="mt-5 h-1.5 w-full bg-surface-variant rounded-full overflow-hidden">
+<div class="h-full bg-cadastral-gold w-[75%] rounded-full"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Main Data Section -->
+<section class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+<!-- Data Table (Takes up 2 cols on XL) -->
+<div class="xl:col-span-2 bg-paper-white rounded-xl border border-blueprint-gray/40 elite-shadow overflow-hidden flex flex-col">
+<!-- Card Header -->
+<div class="p-6 border-b border-blueprint-gray/40 flex justify-between items-center bg-surface-bright/50">
+<div class="flex items-center gap-3">
+<div class="w-1.5 h-6 bg-deep-navy rounded-full"></div>
+<h3 class="font-title-md text-[18px] text-deep-navy font-bold">Recent Projects</h3>
+</div>
+<button class="text-cadastral-gold font-label-caps text-[11px] font-bold tracking-widest hover:text-deep-navy transition-colors flex items-center gap-1">VIEW ALL <span class="material-symbols-outlined text-[14px]">arrow_forward</span></button>
+</div>
+<!-- Table Container -->
+<div class="overflow-x-auto flex-grow">
+<table class="w-full data-table">
+<thead>
+<tr>
+<th class="">Project ID</th>
+<th class="">Client</th>
+<th class="">Location</th>
+<th class="">Date</th>
+<th class="">Status</th>
+<th class="text-right">Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="font-bold text-deep-navy">#SC-24-089</td>
+<td class="font-medium">Apex Developments</td>
+<td class="text-on-surface-variant">Downtown Core</td>
+<td class="text-on-surface-variant">Oct 12, 2024</td>
+<td class=""><span class="status-tag status-success">Completed</span></td>
+<td class="text-right">
+<button class="w-8 h-8 rounded-full hover:bg-surface text-outline hover:text-cadastral-gold inline-flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+</button>
+</td>
+</tr>
+<tr>
+<td class="font-bold text-deep-navy">#SC-24-090</td>
+<td class="font-medium">Meridian Civic Auth.</td>
+<td class="text-on-surface-variant">North Sector Z</td>
+<td class="text-on-surface-variant">Oct 15, 2024</td>
+<td class=""><span class="status-tag status-pending">In Progress</span></td>
+<td class="text-right">
+<button class="w-8 h-8 rounded-full hover:bg-surface text-outline hover:text-cadastral-gold inline-flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+</button>
+</td>
+</tr>
+<tr>
+<td class="font-bold text-deep-navy">#SC-24-091</td>
+<td class="font-medium">Private Residential</td>
+<td class="text-on-surface-variant">Oakridge Valley</td>
+<td class="text-on-surface-variant">Oct 18, 2024</td>
+<td class=""><span class="status-tag status-drafting">Drafting</span></td>
+<td class="text-right">
+<button class="w-8 h-8 rounded-full hover:bg-surface text-outline hover:text-cadastral-gold inline-flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+</button>
+</td>
+</tr>
+<tr>
+<td class="font-bold text-deep-navy">#SC-24-092</td>
+<td class="font-medium">State Highway Dept.</td>
+<td class="text-on-surface-variant">Route 118 Ext.</td>
+<td class="text-on-surface-variant">Oct 20, 2024</td>
+<td class=""><span class="status-tag status-success">Completed</span></td>
+<td class="text-right">
+<button class="w-8 h-8 rounded-full hover:bg-surface text-outline hover:text-cadastral-gold inline-flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Secondary Visual / Map Area -->
+<div class="bg-paper-white rounded-xl border border-blueprint-gray/40 elite-shadow p-6 flex flex-col h-full">
+<div class="flex items-center justify-between mb-6">
+<div class="flex items-center gap-3">
+<div class="w-1.5 h-6 bg-cadastral-gold rounded-full"></div>
+<h3 class="font-title-md text-[18px] text-deep-navy font-bold">Active Zone</h3>
+</div>
+<button class="text-outline hover:text-deep-navy transition-colors">
+<span class="material-symbols-outlined text-[20px]">more_horiz</span>
+</button>
+</div>
+<!-- Decorative Map Frame -->
+<div class="flex-grow rounded-lg border border-blueprint-gray/60 relative bg-surface-container-low min-h-[300px] overflow-hidden group cursor-pointer shadow-inner">
+<!-- Simulated Map Image -->
+<div class="absolute inset-0 bg-cover bg-center w-full h-full opacity-90 group-hover:scale-105 transition-transform duration-700 ease-out" data-alt="A highly detailed, professional satellite topographic map of an urban development zone. It features precise contour lines, grid overlays, and stark contrasting colors primarily in navy blue, white, and gold to denote elevation and structural boundaries. The aesthetic is highly technical, clean, and data-driven, fitting a modern architectural firm." data-location="New York City" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBWnCmAWYM6ndW979h1WNjxCX8p_Dz1ceuC2ggKfIBmh9YDZI1HwcjIGKI8mdbE5WrgF8zlRr0E1UNDcgIl8t4H5zl9H8vrxXXMJ-u43GUPcafgjNI4pyehGzTOQxxgbvzov-9I7eebEKfvYi1o5BqLZTKEPFkUs7c7URLCPE7uIbRO8E0UPpyeBUaiYYT4Tt4KEZw_2qq_HXmF65uiVBjbk2ip5lmfE65u6BuItVWhqaMf4aDKGBY6Uw')"></div>
+<!-- Overlay UI -->
+<div class="absolute inset-0 bg-gradient-to-t from-deep-navy/40 to-transparent"></div>
+<div class="absolute bottom-4 left-4 right-4 bg-paper-white/95 backdrop-blur-sm p-4 rounded shadow-md flex justify-between items-center border border-white">
+<div>
+<p class="text-[10px] font-bold text-outline uppercase tracking-widest mb-0.5">Current Focus</p>
+<p class="font-body-sm text-deep-navy font-bold">Sector 4 - Grid Alpha</p>
+</div>
+<div class="w-8 h-8 rounded-full bg-cadastral-gold/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-cadastral-gold text-[18px]">explore</span>
+</div>
+</div>
+<!-- Crosshair Decoration -->
+<div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-10 h-10 border-2 border-cadastral-gold rounded-full opacity-80 shadow-[0_0_10px_rgba(166,124,39,0.3)]"></div>
+<div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-14 h-[2px] bg-cadastral-gold opacity-80"></div>
+<div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[2px] h-14 bg-cadastral-gold opacity-80"></div>
+<div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-paper-white rounded-full"></div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</body></html>
