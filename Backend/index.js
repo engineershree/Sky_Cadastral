@@ -483,6 +483,188 @@ app.get('/api/audit-logs', async (req, res) => {
   }
 });
 
+// 16. POST /api/plots - Admin Add New Plot
+app.post('/api/plots', async (req, res) => {
+  try {
+    const {
+      plotNumber, layoutId, project, area, unit, length, width, documentArea,
+      facing, facingRoadWidth, valuation, pricePerSqFt, status, location,
+      valuationNotes
+    } = req.body;
+
+    const id = req.body.id || `PLOT-${Date.now()}`;
+    const defaultPolygon = [
+      [100, 100], [100 + (length || 40) * 2, 100],
+      [100 + (length || 40) * 2, 100 + (width || 30) * 2], [100, 100 + (width || 30) * 2]
+    ];
+
+    const { rows } = await query(
+      `INSERT INTO plots (id, plot_number, layout_id, project, area, unit, length, width, document_area, facing, facing_road_width, polygon_geometry, valuation, price_per_sqft, status, location, verification_status, valuation_notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+      [
+        id, plotNumber, layoutId || 'LAYOUT-001', project || 'Sky Cadastral Phase 1',
+        Number(area) || (length * width) || 1200, unit || 'sq.ft', Number(length) || 40, Number(width) || 30,
+        Number(documentArea) || (length * width) || 1200, facing || 'North', Number(facingRoadWidth) || 40,
+        JSON.stringify(req.body.polygonGeometry || defaultPolygon), Number(valuation) || 2400000,
+        Number(pricePerSqFt) || 2000, status || 'Available', location || 'Sector 1',
+        (documentArea && documentArea !== (length * width)) ? 'Mismatch' : 'Verified',
+        valuationNotes || 'Added manually via Admin Control Panel'
+      ]
+    );
+
+    res.status(201).json({ success: true, plot: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 17. PUT /api/plots/:id - Update Plot Details
+app.put('/api/plots/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      plotNumber, project, area, unit, length, width, documentArea,
+      pricePerSqFt, valuation, status, location, valuationNotes
+    } = req.body;
+
+    const { rows } = await query(
+      `UPDATE plots
+       SET plot_number = COALESCE($1, plot_number),
+           project = COALESCE($2, project),
+           area = COALESCE($3, area),
+           unit = COALESCE($4, unit),
+           length = COALESCE($5, length),
+           width = COALESCE($6, width),
+           document_area = COALESCE($7, document_area),
+           price_per_sqft = COALESCE($8, price_per_sqft),
+           valuation = COALESCE($9, valuation),
+           status = COALESCE($10, status),
+           location = COALESCE($11, location),
+           valuation_notes = COALESCE($12, valuation_notes)
+       WHERE id = $13 RETURNING *`,
+      [
+        plotNumber, project, area ? Number(area) : null, unit, length ? Number(length) : null,
+        width ? Number(width) : null, documentArea ? Number(documentArea) : null,
+        pricePerSqFt ? Number(pricePerSqFt) : null, valuation ? Number(valuation) : null,
+        status, location, valuationNotes, id
+      ]
+    );
+
+    if (rows.length === 0) return res.status(404).json({ error: 'Plot not found' });
+    res.json({ success: true, plot: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 18. DELETE /api/plots/:id - Delete Plot
+app.delete('/api/plots/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query('DELETE FROM plots WHERE id = $1', [id]);
+    res.json({ success: true, message: `Plot ${id} deleted` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 19. PUT /api/bookings/:id/mark-sold - Mark Booking & Plot as Sold
+app.put('/api/bookings/:id/mark-sold', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Find booking
+    const bkRes = await query('SELECT * FROM bookings WHERE id = $1 OR plot_id = $1', [id]);
+    if (bkRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Booking record not found' });
+    }
+
+    const bk = bkRes.rows[0];
+
+    // Update booking status to Sold
+    const updatedBk = await query(
+      `UPDATE bookings 
+       SET status = 'Sold', paid_amount = total_value, remaining_amount = 0 
+       WHERE id = $1 RETURNING *`,
+      [bk.id]
+    );
+
+    // Update plot status to Sold
+    await query(`UPDATE plots SET status = 'Sold' WHERE id = $1`, [bk.plot_id]);
+
+    // Record settlement revenue transaction if remaining amount existed
+    if (Number(bk.remaining_amount) > 0) {
+      const revId = `REV-${Date.now()}`;
+      const dateStr = new Date().toISOString().split('T')[0];
+      const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+      await query(
+        `INSERT INTO revenue_transactions (id, date, time, plot_number, customer_name, type, amount, payment_status, payment_type, note)
+         VALUES ($1, $2, $3, $4, $5, 'Sale', $6, 'Completed', 'Final Settlement', $7)`,
+        [revId, dateStr, timeStr, bk.plot_number, bk.customer_name, Number(bk.remaining_amount), `Final sale realization for Plot ${bk.plot_number}`]
+      );
+    }
+
+    res.json({ success: true, booking: updatedBk.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 20. PUT /api/bookings/:id/cancel - Cancel Booking
+app.put('/api/bookings/:id/cancel', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const bkRes = await query('SELECT * FROM bookings WHERE id = $1', [id]);
+    if (bkRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Booking record not found' });
+    }
+
+    const bk = bkRes.rows[0];
+
+    // Reset plot to Available
+    await query(
+      `UPDATE plots SET status = 'Available', customer_name = '', customer_phone = '' WHERE id = $1`,
+      [bk.plot_id]
+    );
+
+    // Delete booking
+    await query('DELETE FROM bookings WHERE id = $1', [id]);
+
+    res.json({ success: true, message: `Booking ${id} cancelled and plot reset to Available` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 21. PUT /api/projects/:id & DELETE /api/projects/:id
+app.put('/api/projects/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, ownerName, address, description } = req.body;
+    const { rows } = await query(
+      `UPDATE projects 
+       SET name = COALESCE($1, name), owner_name = COALESCE($2, owner_name),
+           address = COALESCE($3, address), description = COALESCE($4, description)
+       WHERE id = $5 RETURNING *`,
+      [name, ownerName, address, description, id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/projects/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query('DELETE FROM projects WHERE id = $1', [id]);
+    res.json({ success: true, message: `Area/Project ${id} removed` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Sky Cadastral Backend API running on http://localhost:${PORT}`);
   console.log(`Connected to Neon DB: ${process.env.DATABASE_URL.split('@')[1]}`);

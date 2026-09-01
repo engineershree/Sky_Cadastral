@@ -142,30 +142,40 @@ export default function PlotDetails({ onOpenBookingModal, onOpenEditPlot }) {
 
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div className="bg-gray-50 p-3 rounded-lg">
-              <span className="text-gray-400 block text-[10px] uppercase font-bold">Plot Number</span>
-              <span className="font-extrabold text-[#001B3A] text-sm">{selectedPlot.plotNumber}</span>
+              <span className="text-gray-400 block text-[10px] uppercase font-bold">Plot Number & Immutable ID</span>
+              <span className="font-extrabold text-[#001B3A] text-sm">{selectedPlot.plotNumber} ({selectedPlot.id})</span>
             </div>
 
             <div className="bg-gray-50 p-3 rounded-lg">
-              <span className="text-gray-400 block text-[10px] uppercase font-bold">Project / Layout</span>
+              <span className="text-gray-400 block text-[10px] uppercase font-bold">Project / Layout Plan</span>
               <span className="font-bold text-gray-800">{selectedPlot.project}</span>
             </div>
 
             <div className="bg-gray-50 p-3 rounded-lg">
-              <span className="text-gray-400 block text-[10px] uppercase font-bold">Total Area</span>
+              <span className="text-gray-400 block text-[10px] uppercase font-bold">Facing & Road Width</span>
+              <span className="font-bold text-gray-800">{selectedPlot.facing || 'East'} • {selectedPlot.facingRoadWidth || 30}ft Road</span>
+            </div>
+
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <span className="text-gray-400 block text-[10px] uppercase font-bold">Total Verified Area</span>
               <span className="font-extrabold text-emerald-800 text-sm">
                 {selectedPlot.area.toLocaleString()} {selectedPlot.unit}
               </span>
             </div>
 
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <span className="text-gray-400 block text-[10px] uppercase font-bold">Current Status</span>
-              <span className="font-bold text-gray-800">{selectedPlot.status}</span>
-            </div>
-
             <div className="bg-gray-50 p-3 rounded-lg col-span-2">
-              <span className="text-gray-400 block text-[10px] uppercase font-bold">Location & Zone</span>
-              <span className="font-medium text-gray-800">{selectedPlot.location}</span>
+              <span className="text-gray-400 block text-[10px] uppercase font-bold">Vector Boundary Vertices (Coordinates)</span>
+              <div className="mt-1 flex flex-wrap gap-1.5 font-mono text-[11px]">
+                {selectedPlot.polygonGeometry ? (
+                  selectedPlot.polygonGeometry.map(([vx, vy], idx) => (
+                    <span key={idx} className="bg-white px-2 py-0.5 border rounded text-gray-700">
+                      P{idx + 1}: ({vx}, {vy})
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-gray-400">Standard Rectangle</span>
+                )}
+              </div>
             </div>
 
             <div className="bg-gray-50 p-3 rounded-lg col-span-2">
@@ -180,13 +190,13 @@ export default function PlotDetails({ onOpenBookingModal, onOpenEditPlot }) {
           </div>
         </div>
 
-        {/* SECTION 2: DIMENSION VERIFICATION ENGINE */}
+        {/* SECTION 2: DIMENSION & GEOMETRY VERIFICATION ENGINE */}
         <div className="bg-white rounded-xl border border-[#E5E9EB] p-6 shadow-xs space-y-4">
           <div className="flex justify-between items-center pb-3 border-b border-gray-100">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-[#A67C27]">straighten</span>
               <h3 className="text-sm font-bold text-[#001B3A] uppercase tracking-wider">
-                Section 2 — Dimension Verification
+                Section 2 — Extracted vs Verified Data Comparison
               </h3>
             </div>
 
@@ -199,26 +209,43 @@ export default function PlotDetails({ onOpenBookingModal, onOpenEditPlot }) {
             ) : (
               <span className="px-2.5 py-1 rounded text-xs font-extrabold bg-amber-100 text-amber-900 border border-amber-400 flex items-center gap-1 animate-pulse">
                 <span className="material-symbols-outlined text-[16px]">warning</span>
-                <span>⚠ Dimension Mismatch</span>
+                <span>⚠ Audit Required</span>
               </span>
             )}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <span className="text-gray-500 text-[10px] uppercase font-bold">Document Area</span>
-              <p className="font-bold text-[#001B3A] text-sm mt-0.5">{docArea.toLocaleString()} sq.ft</p>
-            </div>
-
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <span className="text-gray-500 text-[10px] uppercase font-bold">Length × Width</span>
-              <p className="font-bold text-[#001B3A] text-sm mt-0.5">{selectedPlot.length} × {selectedPlot.width} ft</p>
-            </div>
-
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <span className="text-gray-500 text-[10px] uppercase font-bold">Calculated Area</span>
-              <p className="font-bold text-[#001B3A] text-sm mt-0.5">{calculatedArea.toLocaleString()} sq.ft</p>
-            </div>
+          {/* Comparison Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border">
+              <thead>
+                <tr className="bg-gray-100 text-[#001B3A] font-bold border-b">
+                  <th className="p-2.5">Metric</th>
+                  <th className="p-2.5">Source (PDF Extracted)</th>
+                  <th className="p-2.5">Admin Verified</th>
+                  <th className="p-2.5">Derived System Value</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-gray-700">
+                <tr>
+                  <td className="p-2.5 font-bold">Length × Width</td>
+                  <td className="p-2.5 font-mono">{selectedPlot.length} × {selectedPlot.width} ft</td>
+                  <td className="p-2.5 font-mono font-bold text-gray-900">{selectedPlot.length} × {selectedPlot.width} ft</td>
+                  <td className="p-2.5 font-mono text-gray-500">{selectedPlot.length * selectedPlot.width} sq.ft bounding</td>
+                </tr>
+                <tr>
+                  <td className="p-2.5 font-bold">Plot Surface Area</td>
+                  <td className="p-2.5 font-mono text-amber-800">{docArea.toLocaleString()} sq.ft</td>
+                  <td className="p-2.5 font-mono font-bold text-emerald-800">{selectedPlot.area.toLocaleString()} sq.ft</td>
+                  <td className="p-2.5 font-mono text-gray-500">{calculatedArea.toLocaleString()} sq.ft (Polygon Shoelace)</td>
+                </tr>
+                <tr>
+                  <td className="p-2.5 font-bold">Polygon Nodes</td>
+                  <td className="p-2.5 font-mono">CAD Vector Text Layer</td>
+                  <td className="p-2.5 font-mono font-bold">{selectedPlot.polygonGeometry?.length || 4} Vertices</td>
+                  <td className="p-2.5 font-mono text-gray-500">2D SVG Path</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           {/* Difference & Verification Banner */}
@@ -231,7 +258,10 @@ export default function PlotDetails({ onOpenBookingModal, onOpenEditPlot }) {
           >
             <div>
               <p className="text-xs font-bold text-[#001B3A]">
-                Difference: <span className={areaDifference > 0 ? 'text-amber-800 font-extrabold' : 'text-emerald-700'}>{areaDifference} sq.ft</span>
+                Source/Verified Area Difference:{' '}
+                <span className={areaDifference > 0 ? 'text-amber-800 font-extrabold' : 'text-emerald-700'}>
+                  {areaDifference} sq.ft
+                </span>
               </p>
               <p className="text-[11px] text-gray-500 mt-0.5">
                 {selectedPlot.verifiedBy ? (
@@ -242,12 +272,13 @@ export default function PlotDetails({ onOpenBookingModal, onOpenEditPlot }) {
               </p>
             </div>
 
-            {(!isMatch || selectedPlot.verificationStatus !== 'Verified') && (
+            {selectedPlot.verificationStatus !== 'Verified' && (
               <button
                 onClick={() => verifyPlotDimensions(selectedPlot.id)}
-                className="px-3 py-1.5 bg-[#001B3A] hover:bg-[#002652] text-white rounded text-xs font-bold shadow-xs transition-all"
+                className="px-3.5 py-2 bg-[#001B3A] hover:bg-[#002652] text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center gap-1.5"
               >
-                Confirm & Verify
+                <span className="material-symbols-outlined text-[16px]">verified</span>
+                <span>Confirm & Verify Plot</span>
               </button>
             )}
           </div>

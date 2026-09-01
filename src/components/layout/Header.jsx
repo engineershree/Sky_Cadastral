@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 
-export default function Header({ setMobileOpen, onOpenAddPlot, onOpenAddBooking, onOpenAddRevenue, onOpenAddExpense }) {
+export default function Header({ setMobileOpen, onOpenUploadLayout, onOpenAddPlot, onOpenAddBooking, onOpenAddRevenue, onOpenAddExpense }) {
   const { activeModule, searchQuery, setSearchQuery, activityLogs } = useApp();
   const [notifOpen, setNotifOpen] = useState(false);
 
@@ -42,6 +42,14 @@ export default function Header({ setMobileOpen, onOpenAddPlot, onOpenAddBooking,
         {/* Quick Action Bar Buttons */}
         <div className="hidden lg:flex items-center gap-2">
           <button
+            onClick={onOpenUploadLayout}
+            className="bg-[#A67C27] text-white px-3 py-1.5 rounded text-xs font-semibold hover:bg-[#8e681e] flex items-center gap-1 shadow-xs transition-all"
+          >
+            <span className="material-symbols-outlined text-[16px]">upload_file</span>
+            <span>Upload PDF</span>
+          </button>
+
+          <button
             onClick={onOpenAddPlot}
             className="bg-[#001B3A] text-white px-3 py-1.5 rounded text-xs font-semibold hover:bg-[#002652] flex items-center gap-1 shadow-xs transition-all"
           >
@@ -51,7 +59,7 @@ export default function Header({ setMobileOpen, onOpenAddPlot, onOpenAddBooking,
 
           <button
             onClick={onOpenAddBooking}
-            className="bg-[#A67C27] text-white px-3 py-1.5 rounded text-xs font-semibold hover:bg-[#8e681e] flex items-center gap-1 shadow-xs transition-all"
+            className="bg-purple-700 text-white px-3 py-1.5 rounded text-xs font-semibold hover:bg-purple-800 flex items-center gap-1 shadow-xs transition-all"
           >
             <span className="material-symbols-outlined text-[16px]">bookmark_add</span>
             <span>Booking</span>

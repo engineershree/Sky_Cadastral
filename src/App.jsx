@@ -17,6 +17,7 @@ import ReportsView from './components/reports/ReportsView';
 import SettingsView from './components/settings/SettingsView';
 
 // Modals & UI
+import LayoutUploadModal from './components/layout/LayoutUploadModal';
 import AddPlotModal from './components/plots/AddPlotModal';
 import AddAreaModal from './components/areas/AddAreaModal';
 import BookPlotModal from './components/bookings/BookPlotModal';
@@ -35,6 +36,7 @@ function MainAppContent() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Modals visibility state
+  const [uploadLayoutModalOpen, setUploadLayoutModalOpen] = useState(false);
   const [addPlotModalOpen, setAddPlotModalOpen] = useState(false);
   const [plotToEdit, setPlotToEdit] = useState(null);
 
@@ -89,6 +91,7 @@ function MainAppContent() {
       <div id="main-content" className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
         <Header
           setMobileOpen={setMobileMenuOpen}
+          onOpenUploadLayout={() => setUploadLayoutModalOpen(true)}
           onOpenAddPlot={handleOpenAddPlot}
           onOpenAddBooking={() => handleOpenBookingModal()}
           onOpenAddRevenue={() => setAddRevenueModalOpen(true)}
@@ -153,6 +156,11 @@ function MainAppContent() {
       </div>
 
       {/* Modals & Overlay Drawers */}
+      <LayoutUploadModal
+        isOpen={uploadLayoutModalOpen}
+        onClose={() => setUploadLayoutModalOpen(false)}
+      />
+
       <AddPlotModal
         isOpen={addPlotModalOpen}
         onClose={() => setAddPlotModalOpen(false)}

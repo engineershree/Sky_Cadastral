@@ -3,12 +3,25 @@ import * as THREE from 'three';
 import { useApp } from '../../context/AppContext';
 
 export default function Map3DView({ onOpenBookingModal }) {
-  const { plots, setSelectedPlotId, setActiveModule, setMapMode } = useApp();
+  const {
+    plots,
+    layouts,
+    activeLayoutId,
+    setActiveLayoutId,
+    setSelectedPlotId,
+    setActiveModule,
+    setMapMode
+  } = useApp();
+
   const mountRef = useRef(null);
-  const [selected3DPlot, setSelected3DPlot] = useState(plots[0] || null);
+
+  const currentLayout = layouts.find((l) => l.id === activeLayoutId) || layouts[0];
+  const layoutPlots = plots.filter((p) => !p.layoutId || p.layoutId === currentLayout?.id);
+
+  const [selected3DPlot, setSelected3DPlot] = useState(layoutPlots[0] || plots[0] || null);
 
   const formatCurrency = (val) =>
-    `₹${val.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+    `₹${(val || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
   useEffect(() => {
     const container = mountRef.current;
@@ -17,16 +30,16 @@ export default function Map3DView({ onOpenBookingModal }) {
     const width = container.clientWidth;
     const height = container.clientHeight || 550;
 
-    // 1. Scene & Camera
+    // 1. Scene & Camera Setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x001229); // Deep Sky Navy
-    scene.fog = new THREE.FogExp2(0x001229, 0.008);
+    scene.fog = new THREE.FogExp2(0x001229, 0.005);
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 1, 1000);
-    camera.position.set(0, 75, 110);
+    camera.position.set(0, 110, 140);
     camera.lookAt(0, 0, 0);
 
-    // 2. Renderer
+    // 2. WebGL Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -39,23 +52,23 @@ export default function Map3DView({ onOpenBookingModal }) {
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xfffaed, 1.2);
-    dirLight.position.set(50, 100, 50);
+    const dirLight = new THREE.DirectionalLight(0xfffaed, 1.3);
+    dirLight.position.set(60, 120, 60);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
     dirLight.shadow.mapSize.height = 2048;
     scene.add(dirLight);
 
-    const pointLight = new THREE.PointLight(0xa67c27, 2, 100);
-    pointLight.position.set(0, 30, 0);
+    const pointLight = new THREE.PointLight(0xa67c27, 2.5, 150);
+    pointLight.position.set(0, 40, 0);
     scene.add(pointLight);
 
-    // 4. Ground Grid Terrain
-    const gridHelper = new THREE.GridHelper(160, 32, 0xa67c27, 0x1e3a5f);
+    // 4. Ground Grid Terrain & Baseboard
+    const gridHelper = new THREE.GridHelper(260, 52, 0xa67c27, 0x1e3a5f);
     gridHelper.position.y = -0.1;
     scene.add(gridHelper);
 
-    const planeGeo = new THREE.PlaneGeometry(200, 200);
+    const planeGeo = new THREE.PlaneGeometry(300, 300);
     const planeMat = new THREE.MeshStandardMaterial({
       color: 0x011c3b,
       roughness: 0.8,
@@ -67,23 +80,42 @@ export default function Map3DView({ onOpenBookingModal }) {
     planeMesh.receiveShadow = true;
     scene.add(planeMesh);
 
-    // 5. Build 3D Plot Extrusions in Spatial Grid
+    // 5. Build 3D Plot Extrusions using EXACT 2D Polygon Coordinates!
     const plotMeshes = [];
-    const cols = 5;
-    const spacing = 24;
 
-    plots.forEach((plot, idx) => {
-      const col = idx % cols;
-      const row = Math.floor(idx / cols);
+    layoutPlots.forEach((plot) => {
+      const coords = plot.polygonGeometry || [
+        [50, 50],
+        [150, 50],
+        [150, 150],
+        [50, 150]
+      ];
 
-      const x = (col - (cols - 1) / 2) * spacing;
-      const z = (row - 1.5) * spacing;
+      if (coords.length < 3) return;
 
-      const plotWidth = Math.max(12, plot.width * 0.4);
-      const plotDepth = Math.max(12, plot.length * 0.4);
-      const plotHeight = plot.status === 'Sold' ? 8 : plot.status === 'Booked' ? 6 : 4;
+      // Create 2D Three.js Shape from plot polygon geometry
+      const shape = new THREE.Shape();
+      coords.forEach(([px, py], idx) => {
+        // Translate and scale 2D SVG canvas coords into 3D world space centered at origin
+        const wx = (px - 450) * 0.22;
+        const wz = (py - 300) * 0.22;
+        if (idx === 0) shape.moveTo(wx, wz);
+        else shape.lineTo(wx, wz);
+      });
 
-      const geometry = new THREE.BoxGeometry(plotWidth, plotHeight, plotDepth);
+      const plotHeight = plot.status === 'Sold' ? 10 : plot.status === 'Booked' ? 7 : 4;
+
+      const extrudeSettings = {
+        depth: plotHeight,
+        bevelEnabled: true,
+        bevelSegments: 2,
+        steps: 1,
+        bevelSize: 0.4,
+        bevelThickness: 0.4
+      };
+
+      const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+      geometry.rotateX(Math.PI / 2); // Lay flat on ground XZ plane
 
       let colorHex = 0x10b981; // Available Emerald
       if (plot.status === 'Booked') colorHex = 0xf59e0b; // Booked Amber
@@ -91,14 +123,14 @@ export default function Map3DView({ onOpenBookingModal }) {
 
       const material = new THREE.MeshStandardMaterial({
         color: colorHex,
-        roughness: 0.3,
-        metalness: 0.4,
+        roughness: 0.35,
+        metalness: 0.3,
         emissive: colorHex,
-        emissiveIntensity: 0.15,
+        emissiveIntensity: 0.2,
       });
 
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(x, plotHeight / 2, z);
+      mesh.position.y = 0;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.userData = { plot };
@@ -107,7 +139,7 @@ export default function Map3DView({ onOpenBookingModal }) {
       plotMeshes.push(mesh);
     });
 
-    // 6. Interactive Raycasting for 3D Selection
+    // 6. Interactive Raycasting for 3D Mesh Selection
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -127,7 +159,7 @@ export default function Map3DView({ onOpenBookingModal }) {
 
     renderer.domElement.addEventListener('pointerdown', handlePointerDown);
 
-    // 7. Interactive Orbit Rotation
+    // 7. Orbit Camera Rotation
     let isDragging = false;
     let previousMousePosition = { x: 0, y: 0 };
 
@@ -145,7 +177,7 @@ export default function Map3DView({ onOpenBookingModal }) {
       };
 
       const deltaRotationQuaternion = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(0, (deltaMove.x * Math.PI) / 180 * 0.5, 0, 'XYZ')
+        new THREE.Euler(0, ((deltaMove.x * Math.PI) / 180) * 0.4, 0, 'XYZ')
       );
 
       scene.quaternion.multiplyQuaternions(deltaRotationQuaternion, scene.quaternion);
@@ -164,13 +196,12 @@ export default function Map3DView({ onOpenBookingModal }) {
     let animationFrameId;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
-      scene.rotation.y += 0.001; // Subtle slow orbit rotation
+      scene.rotation.y += 0.0008; // Gentle orbit rotation
       renderer.render(scene, camera);
     };
 
     animate();
 
-    // Clean up
     return () => {
       cancelAnimationFrame(animationFrameId);
       renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
@@ -181,7 +212,7 @@ export default function Map3DView({ onOpenBookingModal }) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [plots]);
+  }, [layoutPlots]);
 
   const handleOpenDetails = (plotId) => {
     setSelectedPlotId(plotId);
@@ -195,26 +226,43 @@ export default function Map3DView({ onOpenBookingModal }) {
         <div>
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-purple-700">view_in_ar</span>
-            <h2 className="text-xl font-bold text-[#001B3A]">3D Spatial GIS Plot Viewer</h2>
+            <h2 className="text-xl font-bold text-[#001B3A]">3D Spatial Vector Extrusion GIS Viewer</h2>
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
-            Interactive Three.js 3D spatial terrain visualization. Drag mouse to orbit view, click plots to inspect.
+            Three.js spatial terrain extruded directly from verified 2D plot polygon geometry. Drag mouse to orbit.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
-          <button
-            onClick={() => setMapMode('2D View')}
-            className="px-3.5 py-1.5 rounded-md text-xs font-bold text-gray-600 hover:text-[#001B3A]"
-          >
-            2D Layout Grid
-          </button>
-          <button
-            onClick={() => setMapMode('3D View')}
-            className="px-3.5 py-1.5 rounded-md text-xs font-bold bg-[#001B3A] text-white shadow-xs"
-          >
-            3D Spatial Viewer
-          </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border">
+            <span className="text-xs font-bold text-gray-500 px-2">Layout:</span>
+            <select
+              value={activeLayoutId}
+              onChange={(e) => setActiveLayoutId(e.target.value)}
+              className="bg-white border rounded px-2.5 py-1 text-xs font-bold text-[#001B3A] outline-none"
+            >
+              {layouts.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg">
+            <button
+              onClick={() => setMapMode('2D View')}
+              className="px-3.5 py-1.5 rounded-md text-xs font-bold text-gray-600 hover:text-[#001B3A]"
+            >
+              2D Vector Layout
+            </button>
+            <button
+              onClick={() => setMapMode('3D View')}
+              className="px-3.5 py-1.5 rounded-md text-xs font-bold bg-[#001B3A] text-white shadow-xs"
+            >
+              3D Spatial Viewer
+            </button>
+          </div>
         </div>
       </div>
 
@@ -225,8 +273,8 @@ export default function Map3DView({ onOpenBookingModal }) {
           <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
           {/* Controls Overlay */}
-          <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded text-[10px] text-amber-300 font-mono tracking-wider border border-white/10">
-            Click Plot Block to Inspect • Mouse Drag to Rotate 3D Camera
+          <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded text-[10px] text-amber-300 font-mono tracking-wider border border-white/10">
+            Synchronized Extrusions • Click Mesh to Inspect • Mouse Drag to Orbit 3D Camera
           </div>
         </div>
 
@@ -237,7 +285,7 @@ export default function Map3DView({ onOpenBookingModal }) {
               <div className="flex justify-between items-center border-b pb-3">
                 <div>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700">
-                    3D Spatial Selected Plot
+                    3D Spatial Extruded Plot
                   </span>
                   <h3 className="text-xl font-black text-[#001B3A]">
                     Plot {selected3DPlot.plotNumber}
@@ -262,12 +310,16 @@ export default function Map3DView({ onOpenBookingModal }) {
                   <span className="font-bold text-[#001B3A]">{selected3DPlot.project}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Spatial Dimensions:</span>
-                  <span className="font-mono font-bold">{selected3DPlot.length} × {selected3DPlot.width} ft</span>
+                  <span className="text-gray-500">Facing & Road:</span>
+                  <span className="font-bold text-[#001B3A]">{selected3DPlot.facing || 'East'} • {selected3DPlot.facingRoadWidth || 30}ft Road</span>
+                </div>
+                <div className="flex justify-between bg-amber-50 p-2 rounded border border-amber-200">
+                  <span className="text-amber-900 font-bold">PDF Length × Width:</span>
+                  <span className="font-mono font-extrabold text-[#001B3A] text-sm">{selected3DPlot.length} × {selected3DPlot.width} ft</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Plot Area:</span>
-                  <span className="font-bold text-emerald-800">{selected3DPlot.area} sq.ft</span>
+                  <span className="text-gray-500">Plot Extruded Area:</span>
+                  <span className="font-bold text-emerald-800 text-sm">{selected3DPlot.area} sq.ft</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Valuation:</span>
