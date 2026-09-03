@@ -38,7 +38,7 @@ export function AppProvider({ children }) {
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     const saved = localStorage.getItem('sky_cadastral_auth');
-    return saved ? JSON.parse(saved) : true;
+    return saved ? JSON.parse(saved) : false;
   });
 
   const currentUser = {
