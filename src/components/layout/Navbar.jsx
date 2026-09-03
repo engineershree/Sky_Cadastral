@@ -1,12 +1,13 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Phone, Map, ShieldCheck } from 'lucide-react';
+import { Phone, Map } from 'lucide-react';
 import logoImg from '../../assets/logo.jpeg';
 
 export default function Navbar() {
   const location = useLocation();
 
   const isActive = (path) => location.pathname === path;
+  const isPlotsSection = location.pathname.startsWith('/plots');
 
   return (
     <nav className="navbar">
@@ -30,7 +31,7 @@ export default function Navbar() {
           </Link>
           <Link
             to="/plots"
-            className={`nav-link ${isActive('/plots') ? 'active' : ''}`}
+            className={`nav-link ${isPlotsSection ? 'active' : ''}`}
           >
             Plots Explorer
           </Link>
@@ -43,12 +44,6 @@ export default function Navbar() {
           <a href="/#contact" className="nav-link">
             Contact
           </a>
-          <Link
-            to="/admin"
-            className={`nav-link admin-link ${isActive('/admin') ? 'active' : ''}`}
-          >
-            Admin
-          </Link>
         </div>
 
         {/* Right Phone & CTA Button */}

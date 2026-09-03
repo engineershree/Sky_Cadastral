@@ -1,28 +1,50 @@
-// Mock REST API Client Abstraction for Backend-Ready Architecture
+const RENDER_PROD_URL = 'https://sky-cadastral.onrender.com';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || RENDER_PROD_URL).replace(/\/+$/, '');
+
+async function parseJsonResponse(response) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
 
 export const apiClient = {
-  /**
-   * Simulated GET request wrapper
-   */
   async get(url, params = {}) {
-    // Simulate realistic asynchronous network latency (30ms - 80ms)
-    await new Promise((resolve) => setTimeout(resolve, 40));
-    return { status: 200, url, params };
+    const query = new URLSearchParams(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
+    ).toString();
+    const fullUrl = `${API_BASE}${url}${query ? `?${query}` : ''}`;
+    const response = await fetch(fullUrl, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    return parseJsonResponse(response);
   },
 
-  /**
-   * Simulated POST request wrapper
-   */
   async post(url, payload = {}) {
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    return { status: 201, url, data: payload };
+    const response = await fetch(`${API_BASE}${url}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    return parseJsonResponse(response);
   },
 
-  /**
-   * Simulated PATCH request wrapper
-   */
   async patch(url, payload = {}) {
-    await new Promise((resolve) => setTimeout(resolve, 40));
-    return { status: 200, url, data: payload };
-  }
+    const response = await fetch(`${API_BASE}${url}`, {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    return parseJsonResponse(response);
+  },
 };

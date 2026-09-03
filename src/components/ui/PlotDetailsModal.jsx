@@ -51,6 +51,18 @@ export default function PlotDetailsModal({
             </div>
           </div>
 
+          {plot.lengthFt && plot.widthFt && (
+            <div className="spec-item">
+              <div className="icon-box orange">
+                <Maximize2 size={16} />
+              </div>
+              <div className="spec-text">
+                <span className="spec-lbl">Dimensions</span>
+                <strong className="spec-val">{plot.lengthFt} ft × {plot.widthFt} ft</strong>
+              </div>
+            </div>
+          )}
+
           <div className="spec-item">
             <div className="icon-box orange">
               <Compass size={16} />

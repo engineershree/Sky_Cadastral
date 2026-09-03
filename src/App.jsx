@@ -1,11 +1,10 @@
 import React, { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
+import AreaListPage from './pages/AreaListPage';
 import './App.css';
 
-// Lazy-load heavy 3D Explorer and Admin pages for fast initial page loads & clean chunking
 const PlotExplorer = lazy(() => import('./pages/PlotExplorer'));
-const DemoAdmin = lazy(() => import('./pages/DemoAdmin'));
 
 function PageLoader() {
   return (
@@ -48,9 +47,8 @@ function App() {
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<LandingPage />} />
-            <Route path="/plots" element={<PlotExplorer />} />
-            <Route path="/admin" element={<DemoAdmin />} />
-            {/* Catch-all fallback route */}
+            <Route path="/plots" element={<AreaListPage />} />
+            <Route path="/plots/:layoutId" element={<PlotExplorer />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

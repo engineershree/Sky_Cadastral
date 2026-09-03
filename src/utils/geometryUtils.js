@@ -72,6 +72,25 @@ export function formatPrice(price) {
 /**
  * Returns color palette tokens for plot states matching light architectural visual theme
  */
+/**
+ * Derives default 3D camera positions from layout metadata bounds.
+ */
+export function getLayoutCameraDefaults(layoutMetadata) {
+  const [cx, cy] = layoutMetadata.viewCenter;
+  const { maxX, maxY } = layoutMetadata.bounds;
+  const span = Math.max(maxX, maxY);
+
+  return {
+    target: [cx, 0, cy],
+    position: [cx, span * 0.825, cy + span * 0.825],
+    topPosition: [cx, span * 1.35, cy + 0.1],
+    shadowPosition: [cx, 0, cy],
+    shadowScale: span * 2.2,
+    maxDistance: span * 2.8,
+    selectOffset: Math.max(35, span * 0.08),
+  };
+}
+
 export function getStatusTheme(status, isSelected = false, isHovered = false) {
   if (isSelected) {
     return {

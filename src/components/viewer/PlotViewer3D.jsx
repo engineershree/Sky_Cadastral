@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
@@ -8,27 +8,40 @@ import SubtleTerrain from './SubtleTerrain';
 import StreetLightMesh from './StreetLightMesh';
 import Landscaping from './Landscaping';
 import { ROADS, GREEN_AREAS } from '../../data/plots';
-import { calculateCentroid } from '../../utils/geometryUtils';
+import { calculateCentroid, getLayoutCameraDefaults } from '../../utils/geometryUtils';
 
-// Canonical 45° Elevated Aerial View Target & Camera Position
-const DEFAULT_TARGET = new THREE.Vector3(130, 0, 95);
-const DEFAULT_CAMERA_POS = new THREE.Vector3(130, 165, 260); // ~45° downward viewing angle
-
-function CameraRig({ selectedPlot, cameraPreset, zoomCommand, onCommandHandled }) {
+function CameraRig({
+  selectedPlot,
+  cameraPreset,
+  zoomCommand,
+  onCommandHandled,
+  cameraDefaults,
+}) {
   const { camera } = useThree();
   const controlsRef = useRef();
   const animIdRef = useRef(null);
   const isFirstMountRef = useRef(true);
 
-  // Set default controls target imperatively on mount to prevent React prop override
+  const defaultTarget = useMemo(
+    () => new THREE.Vector3(...cameraDefaults.target),
+    [cameraDefaults.target]
+  );
+  const defaultCameraPos = useMemo(
+    () => new THREE.Vector3(...cameraDefaults.position),
+    [cameraDefaults.position]
+  );
+  const topCameraPos = useMemo(
+    () => new THREE.Vector3(...cameraDefaults.topPosition),
+    [cameraDefaults.topPosition]
+  );
+
   useEffect(() => {
     if (controlsRef.current) {
-      controlsRef.current.target.copy(DEFAULT_TARGET);
+      controlsRef.current.target.copy(defaultTarget);
       controlsRef.current.update();
     }
-  }, []);
+  }, [defaultTarget]);
 
-  // Handle external toolbar zoom commands (Zoom In, Zoom Out, Reset, Fit)
   useEffect(() => {
     if (!zoomCommand || !controlsRef.current) return;
 
@@ -42,25 +55,23 @@ function CameraRig({ selectedPlot, cameraPreset, zoomCommand, onCommandHandled }
     const dir = currentCamPos.clone().sub(currentTarget);
 
     if (zoomCommand === 'IN') {
-      dir.multiplyScalar(0.75); // Zoom 25% closer
+      dir.multiplyScalar(0.75);
       camera.position.copy(currentTarget.clone().add(dir));
       controlsRef.current.update();
     } else if (zoomCommand === 'OUT') {
-      dir.multiplyScalar(1.3); // Zoom 30% out
+      dir.multiplyScalar(1.3);
       camera.position.copy(currentTarget.clone().add(dir));
       controlsRef.current.update();
     } else if (zoomCommand === 'RESET' || zoomCommand === 'FIT') {
-      camera.position.copy(DEFAULT_CAMERA_POS);
-      controlsRef.current.target.copy(DEFAULT_TARGET);
+      camera.position.copy(defaultCameraPos);
+      controlsRef.current.target.copy(defaultTarget);
       controlsRef.current.update();
     }
 
     if (onCommandHandled) onCommandHandled();
-  }, [zoomCommand, camera, onCommandHandled]);
+  }, [zoomCommand, camera, onCommandHandled, defaultCameraPos, defaultTarget]);
 
-  // Smooth camera lerp on plot selection or preset change
   useEffect(() => {
-    // Skip initial lerp on first render if no plot is selected
     if (isFirstMountRef.current) {
       isFirstMountRef.current = false;
       if (!selectedPlot && cameraPreset === '3D') {
@@ -68,27 +79,27 @@ function CameraRig({ selectedPlot, cameraPreset, zoomCommand, onCommandHandled }
       }
     }
 
-    let targetPos, camPos;
+    let targetPos;
+    let camPos;
 
     if (selectedPlot) {
       const [cx, cy] = calculateCentroid(selectedPlot.coordinates);
+      const offset = cameraDefaults.selectOffset;
       targetPos = new THREE.Vector3(cx, 0, cy);
-      camPos = new THREE.Vector3(cx + 35, 48, cy + 48);
+      camPos = new THREE.Vector3(cx + offset, offset * 1.35, cy + offset);
     } else if (cameraPreset === 'TOP') {
-      targetPos = DEFAULT_TARGET.clone();
-      camPos = new THREE.Vector3(130, 270, 95.1); // Top down 90° view
+      targetPos = defaultTarget.clone();
+      camPos = topCameraPos.clone();
     } else {
-      targetPos = DEFAULT_TARGET.clone();
-      camPos = DEFAULT_CAMERA_POS.clone();
+      targetPos = defaultTarget.clone();
+      camPos = defaultCameraPos.clone();
     }
 
     const startTime = performance.now();
     const duration = 850;
-
-    const startTarget = controlsRef.current?.target.clone() || DEFAULT_TARGET.clone();
+    const startTarget = controlsRef.current?.target.clone() || defaultTarget.clone();
     const startCam = camera.position.clone();
 
-    // Interrupt listener if user starts dragging during camera animation
     const onControlsStart = () => {
       if (animIdRef.current) {
         cancelAnimationFrame(animIdRef.current);
@@ -104,7 +115,7 @@ function CameraRig({ selectedPlot, cameraPreset, zoomCommand, onCommandHandled }
     const animateCamera = (currentTime) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      const easeProgress = 1 - Math.pow(1 - progress, 3); // Cubic ease out
+      const easeProgress = 1 - Math.pow(1 - progress, 3);
 
       if (controlsRef.current) {
         controlsRef.current.target.lerpVectors(startTarget, targetPos, easeProgress);
@@ -130,14 +141,14 @@ function CameraRig({ selectedPlot, cameraPreset, zoomCommand, onCommandHandled }
         controls.removeEventListener('start', onControlsStart);
       }
     };
-  }, [selectedPlot, cameraPreset, camera]);
+  }, [selectedPlot, cameraPreset, camera, defaultTarget, defaultCameraPos, topCameraPos, cameraDefaults.selectOffset]);
 
   return (
     <OrbitControls
       ref={controlsRef}
       makeDefault
       enablePan={true}
-      screenSpacePanning={false} // CRITICAL FIX: forces panning to slide along ground plane (x, 0, z)
+      screenSpacePanning={false}
       panSpeed={1.2}
       rotateSpeed={0.8}
       zoomSpeed={1.0}
@@ -150,9 +161,9 @@ function CameraRig({ selectedPlot, cameraPreset, zoomCommand, onCommandHandled }
         ONE: THREE.TOUCH.ROTATE,
         TWO: THREE.TOUCH.DOLLY_PAN
       }}
-      maxPolarAngle={Math.PI / 2.15} // Prevent camera going below ground
+      maxPolarAngle={Math.PI / 2.15}
       minDistance={15}
-      maxDistance={380}
+      maxDistance={cameraDefaults.maxDistance}
       enableDamping={true}
       dampingFactor={0.05}
     />
@@ -161,6 +172,7 @@ function CameraRig({ selectedPlot, cameraPreset, zoomCommand, onCommandHandled }
 
 export default function PlotViewer3D({
   plots,
+  layoutMetadata,
   selectedPlotId,
   onSelectPlot,
   statusFilter = 'ALL',
@@ -168,79 +180,90 @@ export default function PlotViewer3D({
   cameraPreset = '3D',
   zoomCommand,
   onCommandHandled,
-  onResetCamera
+  onResetCamera,
+  showDemoInfrastructure = false,
 }) {
   const selectedPlot = plots.find((p) => p.id === selectedPlotId);
+  const cameraDefaults = useMemo(
+    () => getLayoutCameraDefaults(layoutMetadata),
+    [layoutMetadata]
+  );
 
   return (
     <div
       className="canvas-container"
       style={{ touchAction: 'none' }}
-      onContextMenu={(e) => e.preventDefault()} // Suppress browser right-click menu for smooth panning
+      onContextMenu={(e) => e.preventDefault()}
     >
       <Canvas
-        camera={{ position: [130, 165, 260], fov: 45 }}
+        camera={{ position: cameraDefaults.position, fov: 45 }}
         shadows
         gl={{
           antialias: true,
           preserveDrawingBuffer: true,
-          powerPreference: 'high-performance'
+          powerPreference: 'high-performance',
+          failIfMajorPerformanceCaveat: false
+        }}
+        onCreated={({ gl }) => {
+          if (gl && gl.domElement) {
+            gl.domElement.addEventListener('webglcontextlost', (event) => {
+              event.preventDefault();
+            }, false);
+          }
         }}
         dpr={[1, 2]}
         style={{ touchAction: 'none' }}
       >
-        {/* Real-Estate Light Daylight Atmosphere */}
         <color attach="background" args={['#dbeafe']} />
-        <fog attach="fog" args={['#dbeafe', 280, 700]} />
+        <fog attach="fog" args={['#dbeafe', cameraDefaults.maxDistance * 0.7, cameraDefaults.maxDistance * 1.8]} />
 
-        {/* Natural Sun & Daylight Hemisphere Lighting */}
         <ambientLight intensity={0.85} />
         <hemisphereLight intensity={0.7} color="#ffffff" groundColor="#386b31" />
 
-        {/* Sunlight Directional Light with Soft Shadows */}
         <directionalLight
-          position={[210, 260, 110]}
+          position={[
+            layoutMetadata.bounds.maxX * 0.75,
+            layoutMetadata.bounds.maxY * 0.9,
+            layoutMetadata.bounds.maxX * 0.4,
+          ]}
           intensity={2.1}
           color="#fffbeb"
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
           shadow-camera-far={550}
-          shadow-camera-left={-240}
-          shadow-camera-right={240}
-          shadow-camera-top={240}
-          shadow-camera-bottom={-240}
+          shadow-camera-left={-layoutMetadata.bounds.maxX}
+          shadow-camera-right={layoutMetadata.bounds.maxX}
+          shadow-camera-top={layoutMetadata.bounds.maxY}
+          shadow-camera-bottom={-layoutMetadata.bounds.maxY}
           shadow-bias={-0.0001}
         />
 
-        {/* Camera Rig & Orbit Controls with Ground Panning Enabled */}
         <CameraRig
           selectedPlot={selectedPlot}
           cameraPreset={cameraPreset}
           zoomCommand={zoomCommand}
           onCommandHandled={onCommandHandled}
+          cameraDefaults={cameraDefaults}
         />
 
-        {/* 3D Ground Terrain & Boundary Walls */}
-        <SubtleTerrain />
+        <SubtleTerrain layoutMetadata={layoutMetadata} />
 
-        {/* Asphalt Roads & Entrance Arch Gate */}
-        {ROADS.map((road) => (
-          <RoadMesh key={road.id} road={road} />
-        ))}
+        {showDemoInfrastructure && (
+          <>
+            {ROADS.map((road) => (
+              <RoadMesh key={road.id} road={road} />
+            ))}
 
-        {/* Green Amenity Parks */}
-        {GREEN_AREAS.map((area) => (
-          <GreenAreaMesh key={area.id} area={area} />
-        ))}
+            {GREEN_AREAS.map((area) => (
+              <GreenAreaMesh key={area.id} area={area} />
+            ))}
 
-        {/* 3D Street Light Poles */}
-        <StreetLightMesh />
+            <StreetLightMesh />
+            <Landscaping />
+          </>
+        )}
 
-        {/* 3D Trees, Park Gazebos, Playground & Vehicles */}
-        <Landscaping />
-
-        {/* Extruded 3D Land Plot Meshes */}
         {plots.map((plot) => {
           const isSelected = plot.id === selectedPlotId;
           const matchesStatus =
@@ -262,18 +285,16 @@ export default function PlotViewer3D({
           );
         })}
 
-        {/* Soft Ground Contact Shadows — Baked once */}
         <ContactShadows
-          position={[130, 0, 95]}
+          position={cameraDefaults.shadowPosition}
           opacity={0.55}
-          scale={400}
+          scale={cameraDefaults.shadowScale}
           blur={1.8}
           far={15}
           frames={1}
         />
       </Canvas>
 
-      {/* Viewport Control Guide Badge */}
       <div className="viewer-controls-badge">
         <span>🖱️ Left: Orbit / Touch 1-Finger</span>
         <span>🖱️ Right: Slide / Touch 2-Finger</span>

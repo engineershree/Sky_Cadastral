@@ -1,10 +1,9 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
-import { LAYOUT_METADATA } from '../../data/plots';
 
-export default function SubtleTerrain() {
-  const [centerX, centerY] = LAYOUT_METADATA.viewCenter; // [130, 95]
-  const { maxX, maxY } = LAYOUT_METADATA.bounds;          // 260, 190
+export default function SubtleTerrain({ layoutMetadata }) {
+  const [centerX, centerY] = layoutMetadata.viewCenter;
+  const { maxX, maxY } = layoutMetadata.bounds;
 
   // Ground plane with natural height variations outside layout
   const terrainGeometry = useMemo(() => {
@@ -130,15 +129,9 @@ export default function SubtleTerrain() {
         <meshStandardMaterial color="#64748b" roughness={0.7} />
       </mesh>
 
-      {/* Perimeter Boundary Wall - South Wall (Left of Entrance) */}
-      <mesh position={[55, wallHeight / 2, -2]} receiveShadow castShadow>
-        <boxGeometry args={[116, wallHeight, wallThickness]} />
-        <meshStandardMaterial color="#64748b" roughness={0.7} />
-      </mesh>
-
-      {/* Perimeter Boundary Wall - South Wall (Right of Entrance) */}
-      <mesh position={[205, wallHeight / 2, -2]} receiveShadow castShadow>
-        <boxGeometry args={[104, wallHeight, wallThickness]} />
+      {/* Perimeter Boundary Wall - South Wall */}
+      <mesh position={[centerX, wallHeight / 2, -2]} receiveShadow castShadow>
+        <boxGeometry args={[maxX + 10, wallHeight, wallThickness]} />
         <meshStandardMaterial color="#64748b" roughness={0.7} />
       </mesh>
     </group>

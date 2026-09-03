@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ROADS, GREEN_AREAS, LAYOUT_METADATA } from '../../data/plots';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { ROADS, GREEN_AREAS } from '../../data/plots';
 import {
   coordinatesToSVGPath,
   calculateCentroid,
@@ -9,11 +9,13 @@ import {
 
 export default function PlotViewer2D({
   plots,
+  layoutMetadata,
   selectedPlotId,
   onSelectPlot,
   statusFilter = 'ALL',
   facingFilter = 'ALL',
-  zoomCommand, // External zoom commands: 'IN', 'OUT', 'RESET', 'FIT'
+  showDemoInfrastructure = false,
+  zoomCommand,
   onCommandHandled
 }) {
   const [hoveredPlotId, setHoveredPlotId] = useState(null);
@@ -36,7 +38,43 @@ export default function PlotViewer2D({
     scaleRef.current = scale;
   }, [scale]);
 
-  const { maxX, maxY } = LAYOUT_METADATA.bounds;
+  const bounds = useMemo(() => {
+    if (!plots || plots.length === 0) {
+      const b = layoutMetadata?.bounds || { minX: 0, maxX: 800, minY: 0, maxY: 600 };
+      return { ...b, width: b.maxX - b.minX, height: b.maxY - b.minY };
+    }
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    plots.forEach((p) => {
+      const coords = p.coordinates || p.polygonGeometry;
+      if (coords && Array.isArray(coords)) {
+        coords.forEach(([x, y]) => {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        });
+      }
+    });
+    if (!isFinite(minX) || !isFinite(maxX)) {
+      const b = layoutMetadata?.bounds || { minX: 0, maxX: 800, minY: 0, maxY: 600 };
+      return { ...b, width: b.maxX - b.minX, height: b.maxY - b.minY };
+    }
+    const pad = 30;
+    const calcMinX = Math.max(0, minX - pad);
+    const calcMinY = Math.max(0, minY - pad);
+    const calcMaxX = maxX + pad;
+    const calcMaxY = maxY + pad;
+    return {
+      minX: calcMinX,
+      minY: calcMinY,
+      maxX: calcMaxX,
+      maxY: calcMaxY,
+      width: calcMaxX - calcMinX,
+      height: calcMaxY - calcMinY
+    };
+  }, [plots, layoutMetadata]);
+
+  const { maxX, maxY } = bounds;
 
   // Handle external toolbar zoom commands
   useEffect(() => {
@@ -62,21 +100,19 @@ export default function PlotViewer2D({
         const [cx, cy] = calculateCentroid(selectedPlot.coordinates);
         const rect = containerRef.current.getBoundingClientRect();
         
-        // Calculate exact scale and pixel offsets
         const targetScale = Math.max(scaleRef.current, 1.4);
         
-        // Viewport center in SVG coordinates vs centroid
-        const svgCenterX = maxX / 2;
-        const svgCenterY = maxY / 2;
+        const svgCenterX = (bounds.minX + bounds.maxX) / 2;
+        const svgCenterY = (bounds.minY + bounds.maxY) / 2;
         
-        const deltaX = (svgCenterX - cx) * (rect.width / (maxX + 40));
-        const deltaY = (svgCenterY - cy) * (rect.height / (maxY + 30));
+        const deltaX = (svgCenterX - cx) * (rect.width / (bounds.width || 800));
+        const deltaY = (svgCenterY - cy) * (rect.height / (bounds.height || 600));
 
         setScale(targetScale);
         setTranslate({ x: deltaX * targetScale, y: deltaY * targetScale });
       }
     }
-  }, [selectedPlotId, plots, maxX, maxY]);
+  }, [selectedPlotId, plots, bounds]);
 
   // Mouse wheel zoom centered on cursor location
   const handleWheel = useCallback((e) => {
@@ -190,13 +226,13 @@ export default function PlotViewer2D({
         right: 0,
         bottom: 0,
         overflow: 'hidden',
-        background: '#f5f0e8', // Light architectural warm cream background
+        background: '#f5f0e8',
         touchAction: 'none'
       }}
     >
       <svg
         className="svg-layout-canvas-full"
-        viewBox={`-20 -15 ${maxX + 40} ${maxY + 30}`}
+        viewBox={`${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`}
         preserveAspectRatio="xMidYMid meet"
         style={{
           width: '100%',
@@ -207,38 +243,32 @@ export default function PlotViewer2D({
         }}
       >
         <defs>
-          {/* Subtle Architectural Landscape Background Gradient */}
           <linearGradient id="architecturalGround" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#f7f3ec" />
             <stop offset="50%" stopColor="#f3ede2" />
             <stop offset="100%" stopColor="#ede6d8" />
           </linearGradient>
 
-          {/* Topography Contour Line Pattern */}
           <pattern id="contourGrid" width="40" height="40" patternUnits="userSpaceOnUse">
             <path d="M 0 10 Q 20 5 40 10 M 0 30 Q 20 35 40 30" fill="none" stroke="#e6decb" strokeWidth="0.5" opacity="0.6" />
           </pattern>
 
-          {/* Premium Asphalt Road Gradient (Warm Slate Grey) */}
           <linearGradient id="asphaltRoad" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="#64748b" />
             <stop offset="50%" stopColor="#475569" />
             <stop offset="100%" stopColor="#576375" />
           </linearGradient>
 
-          {/* Natural Water Lake Gradient */}
           <linearGradient id="lakeWater" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#7dd3fc" />
             <stop offset="100%" stopColor="#0284c7" />
           </linearGradient>
 
-          {/* Sports Turf Gradient */}
           <linearGradient id="sportsCourt" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#4ade80" />
             <stop offset="100%" stopColor="#16a34a" />
           </linearGradient>
 
-          {/* Selection Soft Amber Glow Filter */}
           <filter id="amberSelectionGlow" x="-20%" y="-20%" width="140%" height="140%">
             <feGaussianBlur stdDeviation="1.8" result="blur" />
             <feComposite in="SourceGraphic" in2="blur" operator="over" />
@@ -246,33 +276,19 @@ export default function PlotViewer2D({
         </defs>
 
         {/* Master Architectural Ground Texture Backdrop */}
-        <rect x="-100" y="-100" width={maxX + 200} height={maxY + 200} fill="url(#architecturalGround)" />
+        <rect x={bounds.minX - 200} y={bounds.minY - 200} width={bounds.width + 400} height={bounds.height + 400} fill="url(#architecturalGround)" />
 
-        {/* Natural Tree Clusters along Layout Perimeter (Restrained Natural Aesthetics) */}
-        <g opacity="0.9">
-          {Array.from({ length: 48 }).map((_, idx) => {
-            const tx = -15 + (idx % 16) * 18;
-            const ty = idx < 16 ? -10 : idx < 32 ? maxY + 10 : (idx % 16) * 12;
-            const radius = 5 + (idx % 3);
-            return (
-              <g key={`tree-${idx}`}>
-                <circle cx={tx} cy={ty} r={radius} fill="#4d7c0f" opacity="0.3" />
-                <circle cx={tx} cy={ty} r={radius * 0.85} fill="#65a30d" />
-                <circle cx={tx - 1.5} cy={ty - 1.5} r={radius * 0.55} fill="#84cc16" opacity="0.8" />
-              </g>
-            );
-          })}
-        </g>
-
-        {/* Master Plan Perimeter Red Dashed Survey Boundary Line */}
+        {/* Master Plan Perimeter Survey Boundary Line */}
         <path
-          d={`M -2 -2 L ${maxX - 40} -2 L ${maxX - 10} 20 L ${maxX - 10} ${maxY + 2} L -2 ${maxY + 2} Z`}
+          d={`M ${bounds.minX + 2} ${bounds.minY + 2} L ${bounds.maxX - 2} ${bounds.minY + 2} L ${bounds.maxX - 2} ${bounds.maxY - 2} L ${bounds.minX + 2} ${bounds.maxY - 2} Z`}
           fill="none"
           stroke="#ef4444"
           strokeWidth="2.2"
           strokeDasharray="7 4"
         />
 
+        {showDemoInfrastructure && (
+          <>
         {/* Asphalt Roads */}
         {ROADS.map((road) => (
           <g key={road.id}>
@@ -285,126 +301,11 @@ export default function PlotViewer2D({
             />
           </g>
         ))}
-
-        {/* White Dashed Lane Center Markings */}
-        {/* Top 18M Road Line */}
-        <line x1="10" y1="166" x2="215" y2="166" stroke="#ffffff" strokeWidth="0.6" strokeDasharray="4 4" opacity="0.9" />
-        {/* Middle Top 12M Road Line */}
-        <line x1="5" y1="130" x2="215" y2="130" stroke="#ffffff" strokeWidth="0.5" strokeDasharray="3 3" opacity="0.9" />
-        {/* Middle Bottom 12M Road Line */}
-        <line x1="5" y1="66" x2="215" y2="66" stroke="#ffffff" strokeWidth="0.5" strokeDasharray="3 3" opacity="0.9" />
-        {/* Central Vertical 18M Road Line */}
-        <line x1="111" y1="12" x2="111" y2="136" stroke="#fef08a" strokeWidth="0.6" strokeDasharray="4 4" opacity="0.95" />
-        {/* Main Entrance Bottom Road Line */}
-        <line x1="0" y1="6" x2="270" y2="6" stroke="#ffffff" strokeWidth="0.7" strokeDasharray="5 5" opacity="0.95" />
-
-        {/* Road Text Markings (Uppercase White Labels Embedded in Asphalt) */}
-        <text x="112.5" y="167.2" fill="#f8fafc" fontSize="3.0" fontWeight="800" textAnchor="middle" letterSpacing="0.08em">
-          18M WIDE ROAD
-        </text>
-        <text x="60" y="131.2" fill="#f8fafc" fontSize="2.6" fontWeight="800" textAnchor="middle" letterSpacing="0.08em">
-          12M WIDE ROAD
-        </text>
-        <text x="165" y="131.2" fill="#f8fafc" fontSize="2.6" fontWeight="800" textAnchor="middle" letterSpacing="0.08em">
-          12M WIDE ROAD
-        </text>
-        <text x="60" y="67.2" fill="#f8fafc" fontSize="2.6" fontWeight="800" textAnchor="middle" letterSpacing="0.08em">
-          12M WIDE ROAD
-        </text>
-        <text x="165" y="67.2" fill="#f8fafc" fontSize="2.6" fontWeight="800" textAnchor="middle" letterSpacing="0.08em">
-          12M WIDE ROAD
-        </text>
-        <text x="135" y="7.4" fill="#ffffff" fontSize="3.2" fontWeight="900" textAnchor="middle" letterSpacing="0.1em">
-          MAIN ENTRANCE ROAD
-        </text>
-
-        {/* Central Vertical Road Label (Rotated 90 Deg) */}
-        <text
-          x="112"
-          y="74"
-          fill="#f8fafc"
-          fontSize="2.6"
-          fontWeight="800"
-          textAnchor="middle"
-          letterSpacing="0.08em"
-          transform="rotate(-90 112 74)"
-        >
-          18M WIDE ROAD
-        </text>
+          </>
+        )}
 
         {/* ==========================================================================
-           RIGHT AMENITY CORRIDOR & LANDSCAPING (PREMIUM MASTER PLAN STYLE)
-           ========================================================================== */}
-
-        {/* 1. Water Pond / Lake at Top-Right */}
-        <g transform="translate(232, 182)">
-          <ellipse cx="0" cy="0" rx="15" ry="11" fill="url(#lakeWater)" stroke="#38bdf8" strokeWidth="0.8" />
-          <ellipse cx="-2" cy="-2" rx="11" ry="8" fill="none" stroke="#ffffff" strokeWidth="0.5" opacity="0.6" />
-          <path d="M -6 2 Q -2 4 2 2 Q 6 0 10 2" stroke="#ffffff" strokeWidth="0.4" fill="none" opacity="0.5" />
-          <text x="0" y="1.2" fill="#ffffff" fontSize="2.5" fontWeight="800" textAnchor="middle">Lake</text>
-        </g>
-
-        {/* 2. Clubhouse Building & Pill Label */}
-        <g transform="translate(234, 150)">
-          {/* Building Massing */}
-          <rect x="-11" y="-9" width="22" height="15" rx="3" fill="#ffffff" stroke="#94a3b8" strokeWidth="0.7" />
-          <polygon points="-13,-9 0,-16 13,-9" fill="#d97706" />
-          {/* Architectural Pill Badge */}
-          <rect x="-18" y="9" width="36" height="8" rx="4" fill="#ffffff" stroke="#cbd5e1" strokeWidth="0.6" />
-          <text x="0" y="14.2" fill="#0f172a" fontSize="2.4" fontWeight="800" textAnchor="middle">
-            Clubhouse
-          </text>
-        </g>
-
-        {/* 3. Children's Play Area & Pill Label */}
-        <g transform="translate(238, 120)">
-          <circle cx="0" cy="-3" r="8" fill="#fef08a" opacity="0.4" />
-          <path d="M -7 1 L -3 -7 L 1 1 M -3 -3 L 3 -3 M 1 -7 L 5 1" stroke="#d97706" strokeWidth="0.8" fill="none" />
-          <rect x="-24" y="6" width="48" height="7.5" rx="3.5" fill="#ffffff" stroke="#cbd5e1" strokeWidth="0.5" />
-          <text x="0" y="11.2" fill="#0f172a" fontSize="2.2" fontWeight="800" textAnchor="middle">
-            Children's Play Area
-          </text>
-        </g>
-
-        {/* 4. Central Park (Circular Paved Plaza & Lawn) */}
-        <g transform="translate(236, 78)">
-          <circle cx="0" cy="0" r="16" fill="#65a30d" stroke="#84cc16" strokeWidth="0.8" />
-          <circle cx="0" cy="0" r="9" fill="#f1f5f9" stroke="#cbd5e1" strokeWidth="0.6" />
-          <circle cx="0" cy="0" r="4.5" fill="#4d7c0f" />
-          {/* Radial park path lines */}
-          <line x1="-16" y1="0" x2="16" y2="0" stroke="#ffffff" strokeWidth="0.4" opacity="0.6" />
-          <line x1="0" y1="-16" x2="0" y2="16" stroke="#ffffff" strokeWidth="0.4" opacity="0.6" />
-          <text x="0" y="21" fill="#0f172a" fontSize="2.5" fontWeight="800" textAnchor="middle" style={{ textShadow: '0 1px 2px rgba(255,255,255,0.9)' }}>
-            Central Park
-          </text>
-        </g>
-
-        {/* 5. Sports Area (Tennis / Basketball Court & Parking Lot) */}
-        <g transform="translate(236, 28)">
-          {/* Sports Court Turf */}
-          <rect x="-18" y="-12" width="36" height="16" fill="url(#sportsCourt)" stroke="#bbf7d0" strokeWidth="0.6" rx="1.5" />
-          <line x1="0" y1="-12" x2="0" y2="4" stroke="#ffffff" strokeWidth="0.5" />
-          <circle cx="0" cy="-4" r="3.2" fill="none" stroke="#ffffff" strokeWidth="0.4" />
-          <text x="0" y="-14" fill="#15803d" fontSize="2.4" fontWeight="800" textAnchor="middle">
-            Sports Area
-          </text>
-          {/* Parking Lot */}
-          <rect x="-18" y="6" width="36" height="12" fill="#475569" stroke="#94a3b8" strokeWidth="0.5" rx="1" />
-          {Array.from({ length: 6 }).map((_, pIdx) => (
-            <line key={`pk-${pIdx}`} x1={-15 + pIdx * 6} y1="6" x2={-15 + pIdx * 6} y2="18" stroke="#ffffff" strokeWidth="0.3" strokeDasharray="1 1" />
-          ))}
-        </g>
-
-        {/* 6. Entrance Plaza Pill Badge at Bottom-Left */}
-        <g transform="translate(35, 6)">
-          <rect x="-18" y="-5" width="36" height="10" rx="5" fill="#ffffff" stroke="#cbd5e1" strokeWidth="0.7" />
-          <text x="0" y="1.2" fill="#0f172a" fontSize="2.4" fontWeight="800" textAnchor="middle">
-            Entrance Plaza
-          </text>
-        </g>
-
-        {/* ==========================================================================
-           CANONICAL LAND PLOTS (EXACT MATCH TO REFERENCE IMAGE PALETTE & LABELS)
+           CANONICAL LAND PLOTS (EXACT 1-TO-1 100% TRUE SCALE MATCHING 3D VIEW)
            ========================================================================== */}
         {plots.map((plot) => {
           const isSelected = plot.id === selectedPlotId;
@@ -437,7 +338,7 @@ export default function PlotViewer2D({
               onMouseLeave={() => setHoveredPlotId(null)}
               style={{ cursor: 'pointer' }}
             >
-              {/* Plot Boundary Polygon with Inter-Plot Gap Scaling */}
+              {/* Plot Boundary Polygon with 100% Exact True Scale (Zero Coordinate Drift) */}
               <path
                 d={pathD}
                 fill={theme.fillColor}
@@ -447,7 +348,6 @@ export default function PlotViewer2D({
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 filter={isSelected ? 'url(#amberSelectionGlow)' : undefined}
-                transform={`translate(${centroid[0]}, ${centroid[1]}) scale(0.935) translate(${-centroid[0]}, ${-centroid[1]})`}
               />
 
               {/* Architectural Setback Outline */}
@@ -457,7 +357,6 @@ export default function PlotViewer2D({
                 stroke="#ffffff"
                 strokeWidth="0.4"
                 opacity="0.6"
-                transform={`translate(${centroid[0]}, ${centroid[1]}) scale(0.89) translate(${-centroid[0]}, ${-centroid[1]})`}
               />
 
               {/* Plot Number Label */}
