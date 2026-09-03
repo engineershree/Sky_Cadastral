@@ -1,9 +1,15 @@
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import multer from 'multer';
 import { pool, query } from './db.js';
 import { parseCadastralPdf } from './pdf_parser.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -1410,6 +1416,16 @@ app.delete('/api/projects/:id', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Serve Frontend Admin Panel Static Files (Integrated Full-Stack Mode)
+const distPath = path.join(__dirname, '..', 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`🚀 Sky Cadastral Backend API running on http://localhost:${PORT}`);
