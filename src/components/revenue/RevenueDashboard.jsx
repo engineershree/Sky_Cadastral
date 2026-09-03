@@ -18,15 +18,21 @@ export default function RevenueDashboard({ onOpenAddRevenue }) {
   const [dateFilter, setDateFilter] = useState('All'); // 'All' | 'Today' | 'Booking' | 'Sale'
 
   const formatCurrency = (val) =>
-    `₹${val.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+    `₹${Number(val || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  const filteredTransactions = revenueTransactions.filter((t) => {
+  const filteredTransactions = (revenueTransactions || []).filter((t) => {
+    if (!t) return false;
+    const q = (searchQuery || '').toLowerCase();
+    const plotNum = String(t.plotNumber || '').toLowerCase();
+    const custName = String(t.customerName || '').toLowerCase();
+    const tId = String(t.id || '').toLowerCase();
+
     const matchesSearch =
-      t.plotNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.id.toLowerCase().includes(searchQuery.toLowerCase());
+      plotNum.includes(q) ||
+      custName.includes(q) ||
+      tId.includes(q);
 
     if (!matchesSearch) return false;
 
@@ -35,6 +41,41 @@ export default function RevenueDashboard({ onOpenAddRevenue }) {
     if (dateFilter === 'Sale') return t.type === 'Sale';
     return true;
   });
+
+  const { showToast } = useApp();
+
+  const handleExportRevenueCSV = () => {
+    const headers = ['Txn ID', 'Date', 'Time', 'Plot No', 'Customer Name', 'Type', 'Amount (INR)', 'Payment Channel', 'Status'];
+    const rows = filteredTransactions.map((r) => [
+      r.id,
+      r.date,
+      r.time || '',
+      r.plotNumber || '',
+      `"${r.customerName || ''}"`,
+      r.type || 'Revenue',
+      r.amount || 0,
+      `"${r.paymentType || ''}"`,
+      r.paymentStatus || 'Completed'
+    ]);
+
+    const csvContent =
+      `"SKY CADASTRAL REVENUE REGISTER"\n` +
+      `"Generated Date: ${todayStr} | Filter: ${dateFilter}"\n\n` +
+      headers.join(',') +
+      '\n' +
+      rows.map((row) => row.join(',')).join('\n') +
+      `\n\n"TOTAL FILTERED REVENUE","${filteredTransactions.reduce((acc, r) => acc + (r.amount || 0), 0)}"\n`;
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `revenue_register_${dateFilter.toLowerCase()}_${todayStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    if (showToast) showToast('Exported Revenue Register to CSV file successfully!');
+  };
 
   return (
     <div className="p-6 lg:p-10 max-w-[1440px] mx-auto space-y-6 animate-in fade-in duration-300">
@@ -50,13 +91,24 @@ export default function RevenueDashboard({ onOpenAddRevenue }) {
           </p>
         </div>
 
-        <button
-          onClick={onOpenAddRevenue}
-          className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all"
-        >
-          <span className="material-symbols-outlined text-[18px]">add_card</span>
-          <span>+ Record Revenue</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleExportRevenueCSV}
+            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all"
+            title="Export Revenue Register to CSV"
+          >
+            <span className="material-symbols-outlined text-[18px]">table_chart</span>
+            <span>Export CSV</span>
+          </button>
+
+          <button
+            onClick={onOpenAddRevenue}
+            className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all"
+          >
+            <span className="material-symbols-outlined text-[18px]">add_card</span>
+            <span>+ Record Revenue</span>
+          </button>
+        </div>
       </div>
 
       {/* 8 REVENUE KPI CARDS */}

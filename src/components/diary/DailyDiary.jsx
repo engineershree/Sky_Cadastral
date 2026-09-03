@@ -19,26 +19,66 @@ export default function DailyDiary({ onOpenAddRevenue, onOpenAddExpense }) {
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [newTaskInput, setNewTaskInput] = useState('');
   const [saveStatus, setSaveStatus] = useState('Saved');
+  const [taskFilter, setTaskFilter] = useState('all'); // 'all' | 'pending' | 'completed'
 
   // Extract current date entry
   const currentEntry = diaryEntries[selectedDate] || { notes: '', tasks: [] };
   const [notesText, setNotesText] = useState(currentEntry.notes || '');
 
+  const debounceTimerRef = React.useRef(null);
+  const selectedDateRef = React.useRef(selectedDate);
+  const notesTextRef = React.useRef(notesText);
+
+  // Keep refs in sync
+  React.useEffect(() => {
+    selectedDateRef.current = selectedDate;
+  }, [selectedDate]);
+
+  React.useEffect(() => {
+    notesTextRef.current = notesText;
+  }, [notesText]);
+
   // Update local notesText when selectedDate or diaryEntries change
   useEffect(() => {
+    // Flush any pending save for previous date before switching
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
     const entry = diaryEntries[selectedDate];
     setNotesText(entry ? entry.notes || '' : '');
+    setSaveStatus('Saved');
   }, [selectedDate, diaryEntries]);
 
-  // Handle auto-saving notes as user types
+  // Debounced auto-saving notes (waits 4.5 seconds after user stops typing)
   const handleNotesChange = (e) => {
     const val = e.target.value;
     setNotesText(val);
-    setSaveStatus('Saving...');
-    saveDiaryNotes(selectedDate, val);
-    setTimeout(() => {
+    setSaveStatus('Unsaved changes...');
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(async () => {
+      setSaveStatus('Saving...');
+      await saveDiaryNotes(selectedDateRef.current, val);
       setSaveStatus('Saved');
-    }, 500);
+      debounceTimerRef.current = null;
+    }, 4500);
+  };
+
+  // Immediate save on blur (when clicking out of textarea)
+  const handleNotesBlur = async () => {
+    if (debounceTimerRef.current || saveStatus === 'Unsaved changes...') {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      setSaveStatus('Saving...');
+      await saveDiaryNotes(selectedDate, notesText);
+      setSaveStatus('Saved');
+    }
   };
 
   const handleAddTask = (e) => {
@@ -64,12 +104,24 @@ export default function DailyDiary({ onOpenAddRevenue, onOpenAddExpense }) {
     setSelectedDate(todayStr);
   };
 
+  const handlePrintReport = () => {
+    window.print();
+  };
+
   // Financial calculations for selected date
   const dayRevenues = revenueTransactions.filter((r) => r.date === selectedDate);
   const dayExpenses = expenses.filter((e) => e.date === selectedDate);
   const totalDayRevenue = dayRevenues.reduce((acc, r) => acc + (r.amount || 0), 0);
   const totalDayExpense = dayExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
   const dayNet = totalDayRevenue - totalDayExpense;
+
+  // Filter tasks based on selected filter
+  const allTasks = currentEntry.tasks || [];
+  const filteredTasks = allTasks.filter((t) => {
+    if (taskFilter === 'pending') return !t.completed;
+    if (taskFilter === 'completed') return t.completed;
+    return true;
+  });
 
   const formatCurrency = (val) =>
     `₹${val.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -98,8 +150,17 @@ export default function DailyDiary({ onOpenAddRevenue, onOpenAddExpense }) {
           </p>
         </div>
 
-        {/* Date Selector Controls */}
+        {/* Date Selector & Print Actions */}
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handlePrintReport}
+            className="px-3 py-1.5 bg-[#001B3A]/10 hover:bg-[#001B3A]/20 text-[#001B3A] font-bold text-xs rounded-lg transition-all flex items-center gap-1.5"
+            title="Print Official Daily Report"
+          >
+            <span className="material-symbols-outlined text-sm">print</span>
+            <span>Print Report</span>
+          </button>
+
           {selectedDate !== todayStr && (
             <button
               onClick={handleGoToday}
@@ -180,6 +241,7 @@ export default function DailyDiary({ onOpenAddRevenue, onOpenAddExpense }) {
               <textarea
                 value={notesText}
                 onChange={handleNotesChange}
+                onBlur={handleNotesBlur}
                 placeholder="Type your daily notes here... (e.g., site visits, client discussions, boundary checks, surveyor remarks)"
                 className="w-full h-[360px] sm:h-[420px] p-4 text-xs sm:text-sm font-sans text-gray-800 bg-transparent outline-none resize-none leading-[28px] border-none"
                 style={{
@@ -199,17 +261,43 @@ export default function DailyDiary({ onOpenAddRevenue, onOpenAddExpense }) {
 
           {/* DAILY TASKS / CHECKLIST SECTION */}
           <div className="bg-white rounded-xl border border-[#E5E9EB] p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[#001B3A]">checklist</span>
                 <h3 className="text-sm font-bold text-[#001B3A] uppercase tracking-wider">
                   Daily Tasks & Action Checklist
                 </h3>
               </div>
-              <span className="text-xs text-gray-400 font-medium">
-                {currentEntry.tasks ? currentEntry.tasks.filter((t) => t.completed).length : 0} /{' '}
-                {currentEntry.tasks ? currentEntry.tasks.length : 0} Done
-              </span>
+
+              {/* Task Filters & Counters */}
+              <div className="flex items-center gap-2">
+                <div className="flex bg-gray-100 p-0.5 rounded-lg text-[11px] font-semibold">
+                  <button
+                    onClick={() => setTaskFilter('all')}
+                    className={`px-2 py-0.5 rounded-md transition-all ${
+                      taskFilter === 'all' ? 'bg-white text-[#001B3A] shadow-xs font-bold' : 'text-gray-500'
+                    }`}
+                  >
+                    All ({allTasks.length})
+                  </button>
+                  <button
+                    onClick={() => setTaskFilter('pending')}
+                    className={`px-2 py-0.5 rounded-md transition-all ${
+                      taskFilter === 'pending' ? 'bg-white text-[#001B3A] shadow-xs font-bold' : 'text-gray-500'
+                    }`}
+                  >
+                    Pending ({allTasks.filter((t) => !t.completed).length})
+                  </button>
+                  <button
+                    onClick={() => setTaskFilter('completed')}
+                    className={`px-2 py-0.5 rounded-md transition-all ${
+                      taskFilter === 'completed' ? 'bg-white text-[#001B3A] shadow-xs font-bold' : 'text-gray-500'
+                    }`}
+                  >
+                    Done ({allTasks.filter((t) => t.completed).length})
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Add Task Input Form */}
@@ -232,8 +320,8 @@ export default function DailyDiary({ onOpenAddRevenue, onOpenAddExpense }) {
 
             {/* Tasks List */}
             <div className="space-y-2">
-              {currentEntry.tasks && currentEntry.tasks.length > 0 ? (
-                currentEntry.tasks.map((task) => (
+              {filteredTasks.length > 0 ? (
+                filteredTasks.map((task) => (
                   <div
                     key={task.id}
                     className={`p-3 rounded-lg border flex items-center justify-between gap-3 transition-all ${
@@ -266,7 +354,9 @@ export default function DailyDiary({ onOpenAddRevenue, onOpenAddExpense }) {
                 ))
               ) : (
                 <p className="text-center py-4 text-xs text-gray-400 italic">
-                  No tasks created for this date. Add one above!
+                  {allTasks.length === 0
+                    ? 'No tasks created for this date. Add one above!'
+                    : `No ${taskFilter} tasks found.`}
                 </p>
               )}
             </div>
@@ -306,7 +396,7 @@ export default function DailyDiary({ onOpenAddRevenue, onOpenAddExpense }) {
 
               <div className="flex gap-2">
                 <button
-                  onClick={onOpenAddRevenue}
+                  onClick={() => onOpenAddRevenue(selectedDate)}
                   className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold shadow-xs transition-all flex items-center gap-1"
                 >
                   <span className="material-symbols-outlined text-[14px]">add</span>
@@ -314,7 +404,7 @@ export default function DailyDiary({ onOpenAddRevenue, onOpenAddExpense }) {
                 </button>
 
                 <button
-                  onClick={onOpenAddExpense}
+                  onClick={() => onOpenAddExpense(selectedDate)}
                   className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold shadow-xs transition-all flex items-center gap-1"
                 >
                   <span className="material-symbols-outlined text-[14px]">add</span>
@@ -332,7 +422,7 @@ export default function DailyDiary({ onOpenAddRevenue, onOpenAddExpense }) {
                 <span>Revenue Logs ({dayRevenues.length})</span>
               </div>
               <button
-                onClick={onOpenAddRevenue}
+                onClick={() => onOpenAddRevenue(selectedDate)}
                 className="text-[11px] font-bold text-emerald-700 hover:underline"
               >
                 + Add
@@ -364,7 +454,7 @@ export default function DailyDiary({ onOpenAddRevenue, onOpenAddExpense }) {
                 <span>Expense Logs ({dayExpenses.length})</span>
               </div>
               <button
-                onClick={onOpenAddExpense}
+                onClick={() => onOpenAddExpense(selectedDate)}
                 className="text-[11px] font-bold text-rose-700 hover:underline"
               >
                 + Add

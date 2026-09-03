@@ -2,10 +2,11 @@ async function testClientApiConsumption() {
   console.log('========================================================================');
   console.log('🌐 SKY CADASTRAL — CLIENT PORTAL API CONSUMPTION & SYNC TEST');
   console.log('========================================================================');
+  const API_BASE = process.env.API_BASE_URL || 'https://sky-cadastral.onrender.com/api';
 
   // 1. Fetch All Layouts via Client API
   console.log('\n[1. FETCHING LAYOUTS VIA CLIENT API (GET /api/layouts)]');
-  const layoutsRes = await fetch('http://localhost:5000/api/layouts');
+  const layoutsRes = await fetch(`${API_BASE}/layouts`);
   const layouts = await layoutsRes.json();
   console.log(`  ✅ API Response: Received ${layouts.length} Layouts from Neon DB`);
   
@@ -14,7 +15,7 @@ async function testClientApiConsumption() {
 
   // 2. Fetch All 30 Verified Plots for Client 2D/3D Renderer
   console.log(`\n[2. FETCHING 30-PLOT GEOMETRIES & SPECS (GET /api/client/layouts/${targetLayout.id}/plots)]`);
-  const clientPlotsRes = await fetch(`http://localhost:5000/api/client/layouts/${targetLayout.id}/plots`);
+  const clientPlotsRes = await fetch(`${API_BASE}/client/layouts/${targetLayout.id}/plots`);
   const clientPlotsResult = await clientPlotsRes.json();
 
   console.log(`  ✅ API Status: Success (${clientPlotsRes.status} OK)`);
@@ -31,7 +32,7 @@ async function testClientApiConsumption() {
   const targetPlot = clientPlotsResult.plots[0];
   console.log(`  -> Submitting Client Booking Inquiry for Plot "${targetPlot.plotNumber}" (ID: ${targetPlot.id})...`);
 
-  const bookingRes = await fetch('http://localhost:5000/api/client/bookings', {
+  const bookingRes = await fetch(`${API_BASE}/client/bookings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

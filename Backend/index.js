@@ -36,6 +36,34 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+// Auth API Endpoints
+app.post('/api/auth/login', (req, res) => {
+  const { email, password } = req.body || {};
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanPassword = (password || '').trim();
+
+  if (
+    (cleanEmail === 'admin@skycadastral.in' || cleanEmail === 'admin') &&
+    cleanPassword === 'admin123'
+  ) {
+    return res.json({
+      success: true,
+      user: {
+        name: 'Akash Kamble',
+        role: 'Lead Land Surveyor & Valuer',
+        email: 'admin@skycadastral.in'
+      },
+      token: 'jwt_demo_token_sky_cadastral_2026'
+    });
+  }
+  return res.status(401).json({ success: false, error: 'Invalid email or password' });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  return res.json({ success: true, message: 'Logged out successfully' });
+});
+
+
 // 2. POST /api/layouts/upload - Upload PDF Layout & Extract Plots into Neon DB
 app.post('/api/layouts/upload', upload.single('pdfFile'), async (req, res) => {
   try {
@@ -113,6 +141,157 @@ app.post('/api/layouts/upload', upload.single('pdfFile'), async (req, res) => {
     res.status(500).json({ error: err.message, stack: err.stack });
   }
 });
+
+// ============================================================================
+// HIGH-ACCURACY CADASTRAL EXTRACTION & VERIFICATION ENDPOINTS
+// ============================================================================
+
+// POST /api/cadastral/parse-pdf - Geometry-First Vector Cadastral Extraction Pipeline
+app.post('/api/cadastral/parse-pdf', upload.single('pdfFile'), async (req, res) => {
+  try {
+    let pdfInput;
+    if (req.file) {
+      pdfInput = req.file.buffer;
+    } else if (req.body.pdfPath) {
+      pdfInput = req.body.pdfPath;
+    } else {
+      pdfInput = './GOLDEN  CITY FINAL PLAN Model.pdf';
+    }
+
+    const extractionResult = await parseCadastralPdf(pdfInput);
+    res.json({
+      success: true,
+      forensicReport: extractionResult.forensicReport,
+      officialTableMap: extractionResult.officialTableMap,
+      plots: extractionResult.plots,
+      unmatchedPolygons: extractionResult.unmatchedPolygons
+    });
+  } catch (err) {
+    console.error('❌ Cadastral Extraction Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/cadastral/save-verified-layout - Save Verified Plots & Layout to Database
+app.post('/api/cadastral/save-verified-layout', async (req, res) => {
+  try {
+    const { layoutId, projectId, projectName, name, plots, forensicReport } = req.body;
+    const targetLayoutId = layoutId || `LAYOUT-${Date.now()}`;
+
+    // 1. Upsert Layout Record
+    const layoutRes = await query(
+      `INSERT INTO layouts (id, project_id, project_name, name, status, extracted_plots_count, uploaded_at)
+       VALUES ($1, $2, $3, $4, 'Needs Verification', $5, CURRENT_DATE)
+       ON CONFLICT (id) DO UPDATE 
+       SET extracted_plots_count = EXCLUDED.extracted_plots_count, status = 'Needs Verification'
+       RETURNING *`,
+      [targetLayoutId, projectId || 'AREA-001', projectName || 'Golden City Vita Layout', name || 'Golden City Final Plan', plots.length]
+    );
+
+    // 2. Delete existing plots for layout if updating
+    await query('DELETE FROM plots WHERE layout_id = $1', [targetLayoutId]);
+
+    // 3. Insert Verified Plot Records
+    const savedPlots = [];
+    for (const p of plots) {
+      const plotDbId = `PLOT-${targetLayoutId}-${p.plotNumber}`;
+      const plotRes = await query(
+        `INSERT INTO plots (id, plot_number, layout_id, project, area, unit, length, width, document_area, facing, facing_road_width, polygon_geometry, valuation, price_per_sqft, status, location, verification_status, valuation_notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+        [
+          plotDbId,
+          p.plotNumber,
+          targetLayoutId,
+          projectName || 'Golden City Vita Layout',
+          p.officialAreaSqft || p.area || 1000,
+          'sq.ft',
+          p.length || 50,
+          p.width || 30,
+          p.officialAreaSqft || p.documentArea || 1000,
+          p.facing || 'North',
+          p.facingRoadWidth || 40,
+          JSON.stringify(p.polygonGeometry),
+          p.valuation || 2500000,
+          p.pricePerSqFt || 2200,
+          p.status || 'Available',
+          'Golden City Vita, Sector 1',
+          p.verificationStatus || 'Verified',
+          p.valuationNotes || 'Verified Cadastral Vector Polygon'
+        ]
+      );
+      savedPlots.push(plotRes.rows[0]);
+    }
+
+    res.json({
+      success: true,
+      layout: layoutRes.rows[0],
+      savedPlotsCount: savedPlots.length,
+      forensicReport
+    });
+  } catch (err) {
+    console.error('❌ Save Verified Layout Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/cadastral/publish-layout - Enforce Strict Publishing Rules
+app.post('/api/cadastral/publish-layout', async (req, res) => {
+  try {
+    const { layoutId, forensicReport } = req.body;
+
+    // Strict Publishing Rules Check
+    if (forensicReport) {
+      if (forensicReport.missingPlotIdsInSource && forensicReport.missingPlotIdsInSource.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Publishing blocked: ${forensicReport.missingPlotIdsInSource.length} plots are missing from map geometry association (Plot IDs: ${forensicReport.missingPlotIdsInSource.join(', ')})`
+        });
+      }
+      if (forensicReport.duplicateIdsFound && forensicReport.duplicateIdsFound.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Publishing blocked: Duplicate plot IDs detected (${forensicReport.duplicateIdsFound.join(', ')})`
+        });
+      }
+      if (forensicReport.geometryMismatchCount && forensicReport.geometryMismatchCount > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Publishing blocked: ${forensicReport.geometryMismatchCount} plots have geometry vs table area mismatches exceeding tolerance.`
+        });
+      }
+    }
+
+    // Check DB plots verification status for layout
+    const unverifiedPlots = await query(
+      `SELECT plot_number, verification_status FROM plots WHERE layout_id = $1 AND verification_status != 'Verified'`,
+      [layoutId]
+    );
+
+    if (unverifiedPlots.rows.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Publishing blocked: ${unverifiedPlots.rows.length} plots are unverified or mismatched. Human admin approval required.`,
+        unverifiedPlots: unverifiedPlots.rows
+      });
+    }
+
+    // Update layout status to Published
+    const updateRes = await query(
+      `UPDATE layouts SET status = 'Published' WHERE id = $1 RETURNING *`,
+      [layoutId]
+    );
+
+    res.json({
+      success: true,
+      message: 'Layout successfully published to 2D & 3D client platforms!',
+      layout: updateRes.rows[0]
+    });
+  } catch (err) {
+    console.error('❌ Publish Layout Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 // 2. GET /api/layouts - List all Cadastral Layout Plans
 app.get('/api/layouts', async (req, res) => {
@@ -222,10 +401,342 @@ app.post('/api/layouts/:id/publish', async (req, res) => {
 // DEDICATED CLIENT WEBSITE REST API ENDPOINTS FOR 2D/3D VIEWERS & BOOKING
 // =========================================================================
 
-// 6. GET /api/client/published-layouts - Returns Published Cadastral Layouts for Client Website
+// 6a. GET /api/client/areas - Returns All Real Projects & Layout Areas for Client Portal
+app.get('/api/client/areas', async (req, res) => {
+  try {
+    const projectsRes = await query('SELECT * FROM projects ORDER BY created_at DESC');
+    const layoutsRes = await query('SELECT * FROM layouts ORDER BY created_at DESC');
+    const plotsCountRes = await query('SELECT layout_id, project, COUNT(*) as count FROM plots GROUP BY layout_id, project');
+
+    const projects = projectsRes.rows;
+    const layouts = layoutsRes.rows;
+    const plotCounts = plotsCountRes.rows;
+
+    const areasList = projects.map((proj) => {
+      const projLayouts = layouts.filter(
+        (l) => l.project_id === proj.id || (l.project_name && l.project_name.toLowerCase() === proj.name.toLowerCase())
+      );
+
+      const totalPlots = plotCounts
+        .filter((c) => (c.project && c.project.toLowerCase() === proj.name.toLowerCase()) || projLayouts.some((l) => l.id === c.layout_id))
+        .reduce((sum, c) => sum + Number(c.count), 0);
+
+      const mappedLayouts = projLayouts.map((l) => {
+        const lCount = plotCounts.find((c) => c.layout_id === l.id);
+        return {
+          id: l.id,
+          layoutId: l.id,
+          name: l.name,
+          layoutName: l.name,
+          status: l.status || 'Published',
+          pdfUrl: l.original_pdf_url || '',
+          pdfName: l.original_pdf_name || '',
+          fileSize: l.file_size || '',
+          boundingWidth: Number(l.bounding_width || 800),
+          boundingHeight: Number(l.bounding_height || 600),
+          plotCount: lCount ? Number(lCount.count) : Number(l.extracted_plots_count || 0)
+        };
+      });
+
+      if (mappedLayouts.length === 0) {
+        mappedLayouts.push({
+          id: proj.id,
+          layoutId: proj.id,
+          name: `${proj.name} Master Plan`,
+          layoutName: `${proj.name} Master Plan`,
+          status: 'Published',
+          pdfUrl: '',
+          pdfName: '',
+          fileSize: '',
+          boundingWidth: 800,
+          boundingHeight: 600,
+          plotCount: totalPlots
+        });
+      }
+
+      return {
+        id: proj.id,
+        projectId: proj.id,
+        layoutId: mappedLayouts[0].id,
+        name: proj.name,
+        ownerName: proj.owner_name || '',
+        address: proj.address || '',
+        location: proj.address || '',
+        description: proj.description || '',
+        status: 'Published',
+        pdfUrl: mappedLayouts[0].pdfUrl || '',
+        pdfName: mappedLayouts[0].pdfName || '',
+        fileSize: mappedLayouts[0].fileSize || '',
+        boundingWidth: mappedLayouts[0].boundingWidth || 800,
+        boundingHeight: mappedLayouts[0].boundingHeight || 600,
+        plotCount: totalPlots || mappedLayouts[0].plotCount || 0,
+        layouts: mappedLayouts
+      };
+    });
+
+    layouts.forEach((l) => {
+      const alreadyIncluded = areasList.some((a) => a.layouts && a.layouts.some((ly) => ly.id === l.id));
+      if (!alreadyIncluded) {
+        const lCount = plotCounts.find((c) => c.layout_id === l.id);
+        areasList.push({
+          id: l.id,
+          layoutId: l.id,
+          projectId: l.project_id || l.id,
+          name: l.project_name || l.name,
+          layoutName: l.name,
+          ownerName: '',
+          address: '',
+          location: '',
+          description: '',
+          status: l.status || 'Published',
+          pdfUrl: l.original_pdf_url || '',
+          pdfName: l.original_pdf_name || '',
+          fileSize: l.file_size || '',
+          boundingWidth: Number(l.bounding_width || 800),
+          boundingHeight: Number(l.bounding_height || 600),
+          plotCount: lCount ? Number(lCount.count) : Number(l.extracted_plots_count || 0),
+          layouts: [{
+            id: l.id,
+            layoutId: l.id,
+            name: l.name,
+            layoutName: l.name,
+            status: l.status || 'Published',
+            pdfUrl: l.original_pdf_url || '',
+            pdfName: l.original_pdf_name || '',
+            fileSize: l.file_size || '',
+            boundingWidth: Number(l.bounding_width || 800),
+            boundingHeight: Number(l.bounding_height || 600),
+            plotCount: lCount ? Number(lCount.count) : Number(l.extracted_plots_count || 0)
+          }]
+        });
+      }
+    });
+
+    res.json({
+      success: true,
+      count: areasList.length,
+      areas: areasList,
+      layouts: areasList
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 6b. GET /api/client/areas/:areaId - Returns Area Metadata + Bounds + Official PDF Reference
+app.get('/api/client/areas/:areaId', async (req, res) => {
+  try {
+    const { areaId } = req.params;
+    const { rows } = await query(`
+      SELECT 
+        l.id as layout_id,
+        l.name as layout_name,
+        l.status as layout_status,
+        l.original_pdf_url,
+        l.original_pdf_name,
+        l.file_size,
+        l.bounding_width,
+        l.bounding_height,
+        l.extracted_plots_count,
+        l.uploaded_at,
+        p.id as project_id,
+        p.name as project_name,
+        p.address as project_address,
+        p.description as project_description,
+        (SELECT COUNT(*) FROM plots WHERE layout_id = l.id) as total_plots_count,
+        (SELECT COUNT(*) FROM plots WHERE layout_id = l.id AND (verification_status = 'Verified' OR verification_status IS NULL)) as verified_plots_count
+      FROM layouts l
+      LEFT JOIN projects p ON l.project_id = p.id
+      WHERE l.id = $1 OR l.project_id = $1 OR p.id = $1
+      LIMIT 1
+    `, [areaId]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: `Area/Layout with ID ${areaId} not found` });
+    }
+
+    const r = rows[0];
+    const area = {
+      id: r.layout_id,
+      layoutId: r.layout_id,
+      projectId: r.project_id || r.layout_id,
+      name: r.project_name || r.layout_name,
+      layoutName: r.layout_name,
+      address: r.project_address || '',
+      description: r.project_description || '',
+      location: r.project_address || '',
+      status: r.layout_status || 'Published',
+      pdfUrl: r.original_pdf_url || '',
+      pdfName: r.original_pdf_name || '',
+      fileSize: r.file_size || '',
+      bounds: {
+        minX: 0,
+        maxX: Number(r.bounding_width || 800),
+        minY: 0,
+        maxY: Number(r.bounding_height || 600)
+      },
+      viewCenter: [Number(r.bounding_width || 800) / 2, Number(r.bounding_height || 600) / 2],
+      totalPlots: Number(r.total_plots_count || 0),
+      verifiedPlotsCount: Number(r.verified_plots_count || 0)
+    };
+
+    // Also fetch plots for this area to return complete layout bundle
+    const plotsQuery = await query(`
+      SELECT 
+        p.id, p.plot_number, p.layout_id, p.project, p.area, p.unit, p.length, p.width,
+        p.document_area, p.facing, p.facing_road_width, p.polygon_geometry, p.valuation,
+        p.price_per_sqft, p.status, p.location, p.verification_status
+      FROM plots p
+      WHERE (p.layout_id = $1 OR p.project = $1 OR EXISTS (SELECT 1 FROM layouts l WHERE l.id = p.layout_id AND (l.id = $1 OR l.project_id = $1)))
+      ORDER BY p.plot_number ASC
+    `, [r.layout_id]);
+
+    const plots = plotsQuery.rows.map((pr) => {
+      const parsedGeom = typeof pr.polygon_geometry === 'string' ? JSON.parse(pr.polygon_geometry) : pr.polygon_geometry;
+      return {
+        id: pr.id,
+        plotNumber: pr.plot_number,
+        layoutId: pr.layout_id,
+        project: pr.project,
+        length: Number(pr.length || 0),
+        width: Number(pr.width || 0),
+        area: Number(pr.area || 0),
+        unit: pr.unit || 'sq.ft',
+        documentArea: Number(pr.document_area || pr.area || 0),
+        facing: pr.facing || 'East',
+        facingRoadWidth: Number(pr.facing_road_width || 30),
+        polygonGeometry: parsedGeom,
+        coordinates: parsedGeom,
+        valuation: Number(pr.valuation || 0),
+        pricePerSqFt: Number(pr.price_per_sqft || 0),
+        status: pr.status || 'Available',
+        location: pr.location || '',
+        verificationStatus: pr.verification_status || 'Verified',
+        isAvailable: pr.status === 'Available'
+      };
+    });
+
+    res.json({
+      success: true,
+      area,
+      metadata: area, // Alias for client compatibility
+      project: { id: area.projectId, name: area.name, address: area.address },
+      plots
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 6c. GET /api/client/areas/:areaId/plots - Returns Verified/Published Plots for Area
+app.get('/api/client/areas/:areaId/plots', async (req, res) => {
+  try {
+    const { areaId } = req.params;
+    const { rows } = await query(`
+      SELECT 
+        p.id, p.plot_number, p.layout_id, p.project, p.area, p.unit, p.length, p.width,
+        p.document_area, p.facing, p.facing_road_width, p.polygon_geometry, p.valuation,
+        p.price_per_sqft, p.status, p.location, p.verification_status
+      FROM plots p
+      WHERE (p.layout_id = $1 OR p.project = $1 OR EXISTS (SELECT 1 FROM layouts l WHERE l.id = p.layout_id AND (l.id = $1 OR l.project_id = $1)))
+      ORDER BY p.plot_number ASC
+    `, [areaId]);
+
+    const clientPlots = rows.map((r) => {
+      const parsedGeom = typeof r.polygon_geometry === 'string' ? JSON.parse(r.polygon_geometry) : r.polygon_geometry;
+      return {
+        id: r.id,
+        plotNumber: r.plot_number,
+        layoutId: r.layout_id,
+        project: r.project,
+        length: Number(r.length || 0),
+        width: Number(r.width || 0),
+        area: Number(r.area || 0),
+        unit: r.unit || 'sq.ft',
+        documentArea: Number(r.document_area || r.area || 0),
+        facing: r.facing || 'East',
+        facingRoadWidth: Number(r.facing_road_width || 30),
+        polygonGeometry: parsedGeom,
+        coordinates: parsedGeom,
+        valuation: Number(r.valuation || 0),
+        pricePerSqFt: Number(r.price_per_sqft || 0),
+        status: r.status || 'Available',
+        location: r.location || '',
+        verificationStatus: r.verification_status || 'Verified',
+        isAvailable: r.status === 'Available'
+      };
+    });
+
+    res.json({
+      success: true,
+      areaId,
+      totalPlots: clientPlots.length,
+      plots: clientPlots
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 6d. GET /api/client/plots/:plotId - Returns Complete Client-Safe Plot Details
+app.get('/api/client/plots/:plotId', async (req, res) => {
+  try {
+    const { plotId } = req.params;
+    const { rows } = await query(`
+      SELECT 
+        p.id, p.plot_number, p.layout_id, p.project, p.area, p.unit, p.length, p.width,
+        p.document_area, p.facing, p.facing_road_width, p.polygon_geometry, p.valuation,
+        p.price_per_sqft, p.status, p.location, p.verification_status,
+        l.original_pdf_url, l.original_pdf_name
+      FROM plots p
+      LEFT JOIN layouts l ON p.layout_id = l.id
+      WHERE p.id = $1 OR p.plot_number = $1
+      LIMIT 1
+    `, [plotId]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: `Plot with ID ${plotId} not found` });
+    }
+
+    const r = rows[0];
+    const parsedGeom = typeof r.polygon_geometry === 'string' ? JSON.parse(r.polygon_geometry) : r.polygon_geometry;
+    const plot = {
+      id: r.id,
+      plotNumber: r.plot_number,
+      layoutId: r.layout_id,
+      project: r.project,
+      length: Number(r.length || 0),
+      width: Number(r.width || 0),
+      area: Number(r.area || 0),
+      unit: r.unit || 'sq.ft',
+      documentArea: Number(r.document_area || r.area || 0),
+      facing: r.facing || 'East',
+      facingRoadWidth: Number(r.facing_road_width || 30),
+      polygonGeometry: parsedGeom,
+      coordinates: parsedGeom,
+      valuation: Number(r.valuation || 0),
+      pricePerSqFt: Number(r.price_per_sqft || 0),
+      status: r.status || 'Available',
+      location: r.location || '',
+      pdfUrl: r.original_pdf_url || '',
+      pdfName: r.original_pdf_name || '',
+      verificationStatus: r.verification_status || 'Verified',
+      isAvailable: r.status === 'Available'
+    };
+
+    res.json({
+      success: true,
+      plot
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 6e. GET /api/client/published-layouts - Alias for Published Cadastral Layouts
 app.get('/api/client/published-layouts', async (req, res) => {
   try {
-    const { rows } = await query("SELECT * FROM layouts WHERE status = 'Published' ORDER BY uploaded_at DESC");
+    const { rows } = await query("SELECT * FROM layouts WHERE status = 'Published' OR status = 'Verified' ORDER BY uploaded_at DESC");
     res.json({
       success: true,
       count: rows.length,
@@ -236,32 +747,36 @@ app.get('/api/client/published-layouts', async (req, res) => {
   }
 });
 
-// 7. GET /api/client/layouts/:layoutId/plots - Returns 2D/3D Polygon Geometries & Plot Specs for Client App
+// 7. GET /api/client/layouts/:layoutId/plots - Alias for Layout Plots
 app.get('/api/client/layouts/:layoutId/plots', async (req, res) => {
   try {
     const { layoutId } = req.params;
     const { rows } = await query(
-      'SELECT id, plot_number, layout_id, project, area, unit, length, width, document_area, facing, facing_road_width, polygon_geometry, valuation, price_per_sqft, status, verification_status FROM plots WHERE layout_id = $1 ORDER BY plot_number ASC',
+      'SELECT id, plot_number, layout_id, project, area, unit, length, width, document_area, facing, facing_road_width, polygon_geometry, valuation, price_per_sqft, status, verification_status FROM plots WHERE layout_id = $1 OR project = $1 ORDER BY plot_number ASC',
       [layoutId]
     );
 
-    const clientPlots = rows.map((r) => ({
-      id: r.id,
-      plotNumber: r.plot_number,
-      layoutId: r.layout_id,
-      project: r.project,
-      length: Number(r.length),
-      width: Number(r.width),
-      area: Number(r.area),
-      unit: r.unit,
-      facing: r.facing,
-      facingRoadWidth: Number(r.facing_road_width),
-      polygonGeometry: typeof r.polygon_geometry === 'string' ? JSON.parse(r.polygon_geometry) : r.polygon_geometry,
-      valuation: Number(r.valuation),
-      pricePerSqFt: Number(r.price_per_sqft),
-      status: r.status,
-      isAvailable: r.status === 'Available'
-    }));
+    const clientPlots = rows.map((r) => {
+      const parsedGeom = typeof r.polygon_geometry === 'string' ? JSON.parse(r.polygon_geometry) : r.polygon_geometry;
+      return {
+        id: r.id,
+        plotNumber: r.plot_number,
+        layoutId: r.layout_id,
+        project: r.project,
+        length: Number(r.length),
+        width: Number(r.width),
+        area: Number(r.area),
+        unit: r.unit,
+        facing: r.facing,
+        facingRoadWidth: Number(r.facing_road_width),
+        polygonGeometry: parsedGeom,
+        coordinates: parsedGeom,
+        valuation: Number(r.valuation),
+        pricePerSqFt: Number(r.price_per_sqft),
+        status: r.status,
+        isAvailable: r.status === 'Available'
+      };
+    });
 
     res.json({
       success: true,
@@ -438,6 +953,237 @@ app.post('/api/expenses', async (req, res) => {
       [id, dateStr, timeStr, category || 'Survey & GIS', description || '', Number(amount) || 0, note || '']
     );
     res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 13b. DAILY DIARY REST API ENDPOINTS
+// GET /api/diary - List all daily diary entries
+app.get('/api/diary', async (req, res) => {
+  try {
+    const { rows } = await query('SELECT * FROM diary_entries ORDER BY entry_date DESC');
+    const mapped = {};
+    rows.forEach((r) => {
+      mapped[r.entry_date] = {
+        notes: r.notes || '',
+        tasks: typeof r.tasks === 'string' ? JSON.parse(r.tasks) : (r.tasks || [])
+      };
+    });
+    res.json(mapped);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/diary/:date - Fetch diary entry for a specific date
+app.get('/api/diary/:date', async (req, res) => {
+  try {
+    const { date } = req.params;
+    const { rows } = await query('SELECT * FROM diary_entries WHERE entry_date = $1', [date]);
+    if (rows.length === 0) {
+      return res.json({ date, notes: '', tasks: [] });
+    }
+    const r = rows[0];
+    res.json({
+      date: r.entry_date,
+      notes: r.notes || '',
+      tasks: typeof r.tasks === 'string' ? JSON.parse(r.tasks) : (r.tasks || [])
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/diary/:date - Upsert diary notes & tasks for a specific date
+app.put('/api/diary/:date', async (req, res) => {
+  try {
+    const { date } = req.params;
+    const { notes, tasks } = req.body;
+
+    const id = `DIARY-${date}`;
+    const tasksJson = JSON.stringify(tasks || []);
+
+    const { rows } = await query(
+      `INSERT INTO diary_entries (id, entry_date, notes, tasks, updated_at)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+       ON CONFLICT (entry_date) DO UPDATE SET
+       notes = COALESCE($3, diary_entries.notes),
+       tasks = COALESCE($4, diary_entries.tasks),
+       updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [id, date, notes !== undefined ? notes : '', tasksJson]
+    );
+
+    const r = rows[0];
+    res.json({
+      success: true,
+      entry: {
+        date: r.entry_date,
+        notes: r.notes,
+        tasks: typeof r.tasks === 'string' ? JSON.parse(r.tasks) : r.tasks
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/diary/:date/tasks - Add a task for a date
+app.post('/api/diary/:date/tasks', async (req, res) => {
+  try {
+    const { date } = req.params;
+    const { taskText } = req.body;
+    if (!taskText || !taskText.trim()) {
+      return res.status(400).json({ error: 'Task text is required' });
+    }
+
+    const { rows } = await query('SELECT * FROM diary_entries WHERE entry_date = $1', [date]);
+    let currentTasks = [];
+    let currentNotes = '';
+    if (rows.length > 0) {
+      currentNotes = rows[0].notes || '';
+      currentTasks = typeof rows[0].tasks === 'string' ? JSON.parse(rows[0].tasks) : (rows[0].tasks || []);
+    }
+
+    const newTask = {
+      id: `TASK-${Date.now()}`,
+      text: taskText.trim(),
+      completed: false
+    };
+
+    const updatedTasks = [newTask, ...currentTasks];
+    const id = `DIARY-${date}`;
+
+    await query(
+      `INSERT INTO diary_entries (id, entry_date, notes, tasks, updated_at)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+       ON CONFLICT (entry_date) DO UPDATE SET
+       tasks = $4,
+       updated_at = CURRENT_TIMESTAMP`,
+      [id, date, currentNotes, JSON.stringify(updatedTasks)]
+    );
+
+    res.json({ success: true, task: newTask, tasks: updatedTasks });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/diary/:date/tasks/:taskId - Toggle task completion status
+app.put('/api/diary/:date/tasks/:taskId', async (req, res) => {
+  try {
+    const { date, taskId } = req.params;
+    const { rows } = await query('SELECT * FROM diary_entries WHERE entry_date = $1', [date]);
+
+    let tasks = [];
+    let notes = '';
+    if (rows.length > 0) {
+      notes = rows[0].notes || '';
+      tasks = typeof rows[0].tasks === 'string' ? JSON.parse(rows[0].tasks) : (rows[0].tasks || []);
+    } else if (req.body && Array.isArray(req.body.tasks)) {
+      tasks = req.body.tasks;
+    }
+
+    let found = false;
+    tasks = tasks.map((t) => {
+      if (t.id === taskId) {
+        found = true;
+        return { ...t, completed: typeof req.body?.completed === 'boolean' ? req.body.completed : !t.completed };
+      }
+      return t;
+    });
+
+    if (!found && req.body && Array.isArray(req.body.tasks)) {
+      tasks = req.body.tasks;
+    }
+
+    const id = `DIARY-${date}`;
+    await query(
+      `INSERT INTO diary_entries (id, entry_date, notes, tasks, updated_at)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+       ON CONFLICT (entry_date) DO UPDATE SET
+       tasks = $4,
+       updated_at = CURRENT_TIMESTAMP`,
+      [id, date, notes, JSON.stringify(tasks)]
+    );
+
+    res.json({ success: true, tasks });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/diary/:date/tasks/:taskId - Delete task
+app.delete('/api/diary/:date/tasks/:taskId', async (req, res) => {
+  try {
+    const { date, taskId } = req.params;
+    const { rows } = await query('SELECT * FROM diary_entries WHERE entry_date = $1', [date]);
+
+    let tasks = [];
+    let notes = '';
+    if (rows.length > 0) {
+      notes = rows[0].notes || '';
+      tasks = typeof rows[0].tasks === 'string' ? JSON.parse(rows[0].tasks) : (rows[0].tasks || []);
+    } else if (req.body && Array.isArray(req.body.tasks)) {
+      tasks = req.body.tasks;
+    }
+
+    tasks = tasks.filter((t) => t.id !== taskId);
+
+    const id = `DIARY-${date}`;
+    await query(
+      `INSERT INTO diary_entries (id, entry_date, notes, tasks, updated_at)
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+       ON CONFLICT (entry_date) DO UPDATE SET
+       tasks = $4,
+       updated_at = CURRENT_TIMESTAMP`,
+      [id, date, notes, JSON.stringify(tasks)]
+    );
+
+    res.json({ success: true, tasks });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 13c. SYSTEM SETTINGS REST API ENDPOINTS
+// GET /api/settings - Fetch all system settings (letterhead, profile, config)
+app.get('/api/settings', async (req, res) => {
+  try {
+    const { rows } = await query('SELECT * FROM system_settings');
+    const settingsMap = {};
+    rows.forEach((r) => {
+      settingsMap[r.key] = typeof r.value === 'string' ? JSON.parse(r.value) : r.value;
+    });
+    res.json(settingsMap);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/settings - Save or update system setting by key
+app.post('/api/settings', async (req, res) => {
+  try {
+    const { key, value } = req.body;
+    const settingKey = key || 'letterhead';
+    if (!value) return res.status(400).json({ error: 'Setting value is required' });
+
+    const valJson = JSON.stringify(value);
+    const { rows } = await query(
+      `INSERT INTO system_settings (key, value, updated_at)
+       VALUES ($1, $2, CURRENT_TIMESTAMP)
+       ON CONFLICT (key) DO UPDATE SET
+       value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [settingKey, valJson]
+    );
+
+    res.json({
+      success: true,
+      key: rows[0].key,
+      value: typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

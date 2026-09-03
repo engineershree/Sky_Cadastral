@@ -17,18 +17,21 @@ export default function LoginPage() {
     setErrorMessage('');
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
     setLoading(true);
 
-    setTimeout(() => {
-      const res = login(email, password);
-      if (!res.success) {
+    try {
+      const res = await login(email, password);
+      if (res && !res.success) {
         setErrorMessage(res.error || 'Invalid credentials');
       }
+    } catch (err) {
+      setErrorMessage('Login failed');
+    } finally {
       setLoading(false);
-    }, 400);
+    }
   };
 
   return (

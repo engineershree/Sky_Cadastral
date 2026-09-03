@@ -123,20 +123,56 @@ export function AppProvider({ children }) {
     isDanger: false,
   });
 
-  // Sync to Neon PostgreSQL API Backend
-  const API_BASE = 'http://localhost:5000/api';
+  // Smart API Base URL with Local & Remote Auto-Discovery
+  const RENDER_API_BASE = 'https://sky-cadastral.onrender.com/api';
+  const LOCAL_API_BASE = 'http://localhost:5000/api';
+  const PRIMARY_API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? LOCAL_API_BASE : RENDER_API_BASE);
+
+  const safeApiFetch = async (endpoint, options = {}) => {
+    // 1. Try PRIMARY_API_BASE (Local in dev or env override)
+    try {
+      const res = await fetch(`${PRIMARY_API_BASE}${endpoint}`, options);
+      if (res.ok) return res;
+    } catch (e) {
+      // Primary backend offline
+    }
+
+    // 2. Try LOCAL_API_BASE if PRIMARY was not LOCAL_API_BASE
+    if (PRIMARY_API_BASE !== LOCAL_API_BASE) {
+      try {
+        const res = await fetch(`${LOCAL_API_BASE}${endpoint}`, options);
+        if (res.ok) return res;
+      } catch (e) {
+        // Local backend offline
+      }
+    }
+
+    // 3. Try RENDER_API_BASE if not PRIMARY
+    if (PRIMARY_API_BASE !== RENDER_API_BASE) {
+      try {
+        const res = await fetch(`${RENDER_API_BASE}${endpoint}`, options);
+        if (res.ok) return res;
+      } catch (e) {
+        // Render backend offline
+      }
+    }
+
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
 
   useEffect(() => {
     async function fetchFromBackend() {
       try {
-        const [plotsRes, layoutsRes, bookingsRes, revenueRes, expensesRes, auditLogsRes, projectsRes] = await Promise.all([
-          fetch(`${API_BASE}/plots`),
-          fetch(`${API_BASE}/layouts`),
-          fetch(`${API_BASE}/bookings`),
-          fetch(`${API_BASE}/revenue`),
-          fetch(`${API_BASE}/expenses`),
-          fetch(`${API_BASE}/audit-logs`),
-          fetch(`${API_BASE}/projects`)
+        const [plotsRes, layoutsRes, bookingsRes, revenueRes, expensesRes, auditLogsRes, projectsRes, diaryRes, settingsRes] = await Promise.all([
+          safeApiFetch('/plots'),
+          safeApiFetch('/layouts'),
+          safeApiFetch('/bookings'),
+          safeApiFetch('/revenue'),
+          safeApiFetch('/expenses'),
+          safeApiFetch('/audit-logs'),
+          safeApiFetch('/projects'),
+          safeApiFetch('/diary'),
+          safeApiFetch('/settings')
         ]);
 
         if (layoutsRes.ok) {
@@ -209,6 +245,23 @@ export function AppProvider({ children }) {
               address: p.address || '—',
               description: p.description || ''
             })));
+          }
+        }
+
+        if (diaryRes.ok) {
+          const remoteDiaryMap = await diaryRes.json();
+          if (remoteDiaryMap && Object.keys(remoteDiaryMap).length > 0) {
+            setDiaryEntries((prev) => ({
+              ...prev,
+              ...remoteDiaryMap
+            }));
+          }
+        }
+
+        if (settingsRes.ok) {
+          const remoteSettingsMap = await settingsRes.json();
+          if (remoteSettingsMap && remoteSettingsMap.letterhead) {
+            setLetterhead(remoteSettingsMap.letterhead);
           }
         }
       } catch (e) {
@@ -463,9 +516,29 @@ export function AppProvider({ children }) {
   };
 
   // --- AUTH ACTIONS ---
-  const login = (email, password) => {
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPassword = password.trim();
+  const login = async (email, password) => {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanPassword = (password || '').trim();
+
+    try {
+      const res = await safeApiFetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password: cleanPassword })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setIsAuthenticated(true);
+          logActivity('Admin Login Success', '—', '—', 'lock_open', 'general');
+          showToast('Welcome back, Akash Kamble! Login successful.');
+          return { success: true };
+        }
+      }
+    } catch (e) {
+      console.log('Login API remote call error, using local auth logic');
+    }
 
     if (
       (cleanEmail === 'admin@skycadastral.in' || cleanEmail === 'admin') &&
@@ -481,11 +554,17 @@ export function AppProvider({ children }) {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await safeApiFetch('/auth/logout', { method: 'POST' });
+    } catch (e) {
+      // Local fallback
+    }
     setIsAuthenticated(false);
     logActivity('Admin Logout', '—', '—', 'lock', 'general');
     showToast('Logged out successfully.');
   };
+
 
   // --- AREA ACTIONS ---
   const addArea = async (areaData) => {
@@ -544,7 +623,7 @@ export function AppProvider({ children }) {
   };
 
   // --- DIARY ACTIONS ---
-  const saveDiaryNotes = (date, text) => {
+  const saveDiaryNotes = async (date, text) => {
     setDiaryEntries((prev) => ({
       ...prev,
       [date]: {
@@ -552,15 +631,22 @@ export function AppProvider({ children }) {
         notes: text
       }
     }));
+
+    await safeApiFetch(`/diary/${date}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: text })
+    });
   };
 
-  const addDiaryTask = (date, taskText) => {
-    if (!taskText.trim()) return;
+  const addDiaryTask = async (date, taskText) => {
+    if (!taskText || !taskText.trim()) return;
     const newTask = {
       id: `TASK-${Date.now()}`,
       text: taskText.trim(),
       completed: false
     };
+
     setDiaryEntries((prev) => {
       const current = prev[date] || { notes: '', tasks: [] };
       return {
@@ -571,32 +657,82 @@ export function AppProvider({ children }) {
         }
       };
     });
+
+    const res = await safeApiFetch(`/diary/${date}/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskText })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.tasks) {
+        setDiaryEntries((prev) => ({
+          ...prev,
+          [date]: {
+            ...(prev[date] || { notes: '' }),
+            tasks: data.tasks
+          }
+        }));
+      }
+    }
   };
 
-  const toggleDiaryTask = (date, taskId) => {
+  const toggleDiaryTask = async (date, taskId) => {
+    let updatedTasks = [];
     setDiaryEntries((prev) => {
       const current = prev[date] || { notes: '', tasks: [] };
+      updatedTasks = (current.tasks || []).map((t) => (t.id === taskId ? { ...t, completed: !t.completed } : t));
       return {
         ...prev,
         [date]: {
           ...current,
-          tasks: (current.tasks || []).map((t) => (t.id === taskId ? { ...t, completed: !t.completed } : t))
+          tasks: updatedTasks
         }
       };
     });
+
+    await safeApiFetch(`/diary/${date}/tasks/${taskId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tasks: updatedTasks })
+    });
   };
 
-  const deleteDiaryTask = (date, taskId) => {
+  const deleteDiaryTask = async (date, taskId) => {
+    let updatedTasks = [];
     setDiaryEntries((prev) => {
       const current = prev[date] || { notes: '', tasks: [] };
+      updatedTasks = (current.tasks || []).filter((t) => t.id !== taskId);
       return {
         ...prev,
         [date]: {
           ...current,
-          tasks: (current.tasks || []).filter((t) => t.id !== taskId)
+          tasks: updatedTasks
         }
       };
     });
+
+    await safeApiFetch(`/diary/${date}/tasks/${taskId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tasks: updatedTasks })
+    });
+  };
+
+  // --- SYSTEM SETTINGS ACTIONS ---
+  const updateSystemSettings = async (newLetterhead) => {
+    setLetterhead(newLetterhead);
+    try {
+      await safeApiFetch('/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'letterhead', value: newLetterhead })
+      });
+      showToast('Official Letterhead & System Settings saved successfully!');
+    } catch (e) {
+      showToast('Settings saved locally.');
+    }
   };
 
   // --- PLOT ACTIONS ---
@@ -880,7 +1016,7 @@ export function AppProvider({ children }) {
     setRevenueTransactions((prev) => [newRev, ...prev]);
 
     try {
-      await fetch(`${API_BASE}/revenue`, {
+      await safeApiFetch('/revenue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(revenueData)
@@ -907,7 +1043,7 @@ export function AppProvider({ children }) {
     setExpenses((prev) => [newExp, ...prev]);
 
     try {
-      await fetch(`${API_BASE}/expenses`, {
+      await safeApiFetch('/expenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(expenseData)
@@ -1016,6 +1152,7 @@ export function AppProvider({ children }) {
         addRevenueEntry,
         addExpenseEntry,
         deleteExpenseEntry,
+        updateSystemSettings,
 
         // Calculations
         totalRevenue,

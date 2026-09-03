@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 
-export default function LayoutUploadModal({ isOpen, onClose }) {
+export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralPdf }) {
   const { areas, uploadLayoutPdf } = useApp();
 
   const [selectedProjectId, setSelectedProjectId] = useState(areas[0]?.id || 'AREA-001');
@@ -26,32 +26,53 @@ export default function LayoutUploadModal({ isOpen, onClose }) {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!file) return;
-
-    const targetProject = areas.find((a) => a.id === selectedProjectId);
 
     setIsUploading(true);
     setUploadStep(1);
 
-    setTimeout(() => {
+    try {
       setUploadStep(2);
-    }, 1000);
+      const formData = new FormData();
+      if (file) {
+        formData.append('pdfFile', file);
+      } else {
+        formData.append('pdfPath', './GOLDEN  CITY FINAL PLAN Model.pdf');
+      }
 
-    setTimeout(() => {
-      uploadLayoutPdf({
-        projectId: selectedProjectId,
-        projectName: targetProject?.name || 'Sky Cadastral Layout',
-        name: layoutName || file.name.replace('.pdf', ''),
-        fileName: file.name,
-        fileSize: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-        originalPdfUrl: URL.createObjectURL(file)
-      });
-      setIsUploading(false);
+      const apiBase = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : 'https://sky-cadastral.onrender.com/api');
+      let res;
+      try {
+        res = await fetch(`${apiBase}/cadastral/parse-pdf`, {
+          method: 'POST',
+          body: formData
+        });
+      } catch (e) {
+        res = await fetch('https://sky-cadastral.onrender.com/api/cadastral/parse-pdf', {
+          method: 'POST',
+          body: formData
+        });
+      }
+
       setUploadStep(3);
+      if (res.ok) {
+        const data = await res.json();
+        setIsUploading(false);
+        if (onProcessCadastralPdf) {
+          onProcessCadastralPdf(data);
+        } else {
+          onClose();
+        }
+      } else {
+        setIsUploading(false);
+        onClose();
+      }
+    } catch (err) {
+      console.log('Error parsing cadastral PDF:', err);
+      setIsUploading(false);
       onClose();
-    }, 2500);
+    }
   };
 
   return (

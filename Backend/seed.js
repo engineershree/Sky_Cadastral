@@ -188,7 +188,46 @@ async function runSeed() {
       );
     }
 
-    console.log('✅ Seed completed successfully! All tables, layouts, and plots populated in Neon DB.');
+    // 5. Seed Daily Diary Entries
+    console.log('Seeding initial daily diary entries...');
+    const today = new Date().toISOString().split('T')[0];
+    const initialTasks = [
+      { id: 'TASK-1', text: 'Follow up with Apex Developments on Plot A-02 booking agreement', completed: true },
+      { id: 'TASK-2', text: 'Conduct physical boundary stone inspection at Phase 2 (B-07)', completed: false },
+      { id: 'TASK-3', text: 'Submit daily revenue register report to management', completed: false }
+    ];
+    const initialNotes = "Today's Field Notes & Admin Summary:\n- Completed boundary survey check for Phase 1 plots.\n- Verified document dimensions with land registrar.\n- Client meeting scheduled at 3:00 PM.";
+
+    await pool.query(
+      `INSERT INTO diary_entries (id, entry_date, notes, tasks)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (entry_date) DO UPDATE SET
+       notes = EXCLUDED.notes, tasks = EXCLUDED.tasks`,
+      [`DIARY-${today}`, today, initialNotes, JSON.stringify(initialTasks)]
+    );
+
+    // 6. Seed System Settings & Official Letterhead Config
+    console.log('Seeding initial system & letterhead settings...');
+    const defaultLetterhead = {
+      companyName: 'Sky Cadastral Land Surveyors & Valuers',
+      tagline: 'Government Authorized Demarcation & Valuation Consultancy',
+      proprietor: 'Akash Kamble (Lead Cadastral Surveyor)',
+      regNumber: 'RERA-PUNE-2026-VAL-8821',
+      address: 'Suite 402, Cadastral Towers, Hinjewadi Phase 1, Pune - 411057',
+      phone: '+91 98220 99887 / 020-27409911',
+      email: 'official@skycadastral.in',
+      website: 'www.skycadastral.in'
+    };
+
+    await pool.query(
+      `INSERT INTO system_settings (key, value, updated_at)
+       VALUES ($1, $2, CURRENT_TIMESTAMP)
+       ON CONFLICT (key) DO UPDATE SET
+       value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP`,
+      ['letterhead', JSON.stringify(defaultLetterhead)]
+    );
+
+    console.log('✅ Seed completed successfully! All tables, layouts, plots, diary entries, and settings populated in Neon DB.');
     process.exit(0);
   } catch (err) {
     console.error('❌ Error seeding Neon Database:', err);

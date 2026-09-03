@@ -29,6 +29,26 @@ export default function ReportsView() {
     day: 'numeric',
   });
 
+  const todayISO = new Date().toISOString().split('T')[0];
+  const currentMonthISO = todayISO.substring(0, 7);
+
+  const filterByDate = (dateStr) => {
+    if (!dateStr || dateRange === 'All Time') return true;
+    if (dateRange === 'Today') return dateStr === todayISO;
+    if (dateRange === 'This Month') return dateStr.startsWith(currentMonthISO);
+    if (dateRange === 'Q3 2026') return dateStr >= '2026-07-01' && dateStr <= '2026-09-30';
+    return true;
+  };
+
+  const filteredRevenue = revenueTransactions.filter((r) => filterByDate(r.date));
+  const filteredExpenses = expenses.filter((e) => filterByDate(e.date));
+  const filteredBookings = bookings.filter((b) => filterByDate(b.bookingDate));
+  const filteredPlots = plots;
+
+  const filteredTotalRev = filteredRevenue.reduce((sum, r) => sum + (r.amount || 0), 0);
+  const filteredTotalExp = filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+  const filteredNetRev = filteredTotalRev - filteredTotalExp;
+
   // --- EXPORT TO EXCEL / CSV ---
   const handleExportExcel = () => {
     let headers = [];
@@ -37,7 +57,7 @@ export default function ReportsView() {
 
     if (reportType === 'Plot Report') {
       headers = ['Plot No', 'Project', 'Area (sq.ft)', 'Dimensions', 'Valuation (INR)', 'Status', 'Customer', 'Verification'];
-      rows = plots.map((p) => [
+      rows = filteredPlots.map((p) => [
         p.plotNumber,
         `"${p.project}"`,
         p.area,
@@ -49,7 +69,7 @@ export default function ReportsView() {
       ]);
     } else if (reportType === 'Booking Report') {
       headers = ['Booking ID', 'Plot No', 'Customer Name', 'Phone', 'Booking Date', 'Total Value (INR)', 'Paid Advance', 'Remaining Balance', 'Status'];
-      rows = bookings.map((b) => [
+      rows = filteredBookings.map((b) => [
         b.id,
         b.plotNumber,
         `"${b.customerName}"`,
@@ -62,7 +82,7 @@ export default function ReportsView() {
       ]);
     } else if (reportType === 'Revenue Report') {
       headers = ['Txn ID', 'Date', 'Time', 'Plot No', 'Customer', 'Type', 'Amount (INR)', 'Payment Channel', 'Status'];
-      rows = revenueTransactions.map((r) => [
+      rows = filteredRevenue.map((r) => [
         r.id,
         r.date,
         r.time,
@@ -75,7 +95,7 @@ export default function ReportsView() {
       ]);
     } else {
       headers = ['Expense ID', 'Date', 'Time', 'Category', 'Description', 'Amount (INR)', 'Notes'];
-      rows = expenses.map((e) => [
+      rows = filteredExpenses.map((e) => [
         e.id,
         e.date,
         e.time,
@@ -92,9 +112,9 @@ export default function ReportsView() {
       headers.join(',') +
       '\n' +
       rows.map((row) => row.join(',')).join('\n') +
-      `\n\n"TOTAL REALIZED REVENUE","${totalRevenue}"\n` +
-      `"TOTAL EXPENSES","${totalExpenses}"\n` +
-      `"NET REVENUE BALANCE","${netRevenue}"\n`;
+      `\n\n"TOTAL REALIZED REVENUE","${filteredTotalRev}"\n` +
+      `"TOTAL EXPENSES","${filteredTotalExp}"\n` +
+      `"NET REVENUE BALANCE","${filteredNetRev}"\n`;
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -230,17 +250,17 @@ export default function ReportsView() {
         <div className="grid grid-cols-3 gap-4 text-center">
           <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
             <span className="text-[10px] font-bold text-emerald-800 uppercase block">Total Realized Revenue</span>
-            <span className="text-lg font-black text-emerald-900">{formatCurrency(totalRevenue)}</span>
+            <span className="text-lg font-black text-emerald-900">{formatCurrency(filteredTotalRev)}</span>
           </div>
 
           <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg">
             <span className="text-[10px] font-bold text-rose-800 uppercase block">Total Operational Outflow</span>
-            <span className="text-lg font-black text-rose-900">{formatCurrency(totalExpenses)}</span>
+            <span className="text-lg font-black text-rose-900">{formatCurrency(filteredTotalExp)}</span>
           </div>
 
           <div className="p-3 bg-[#001B3A] text-white border border-[#A67C27] rounded-lg">
             <span className="text-[10px] font-bold text-[#A67C27] uppercase block">Net Statement Realization</span>
-            <span className="text-lg font-black text-white">{formatCurrency(netRevenue)}</span>
+            <span className="text-lg font-black text-white">{formatCurrency(filteredNetRev)}</span>
           </div>
         </div>
 
@@ -260,7 +280,7 @@ export default function ReportsView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {revenueTransactions.map((r) => (
+                {filteredRevenue.map((r) => (
                   <tr key={r.id}>
                     <td className="p-2.5 font-mono font-bold text-[#001B3A]">{r.id}</td>
                     <td className="p-2.5">{r.date}</td>
@@ -289,7 +309,7 @@ export default function ReportsView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {plots.map((p) => (
+                {filteredPlots.map((p) => (
                   <tr key={p.id}>
                     <td className="p-2.5 font-bold text-[#001B3A]">{p.plotNumber}</td>
                     <td className="p-2.5">{p.project}</td>
@@ -318,7 +338,7 @@ export default function ReportsView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {bookings.map((b) => (
+                {filteredBookings.map((b) => (
                   <tr key={b.id}>
                     <td className="p-2.5 font-mono font-bold text-[#001B3A]">{b.id}</td>
                     <td className="p-2.5 font-bold text-[#A67C27]">Plot {b.plotNumber}</td>
@@ -345,7 +365,7 @@ export default function ReportsView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {expenses.map((e) => (
+                {filteredExpenses.map((e) => (
                   <tr key={e.id}>
                     <td className="p-2.5 font-mono font-bold text-[#001B3A]">{e.id}</td>
                     <td className="p-2.5">{e.date}</td>

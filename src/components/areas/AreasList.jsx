@@ -14,12 +14,17 @@ export default function AreasList({ onOpenAddArea, onOpenEditArea }) {
     requestConfirmation
   } = useApp();
 
-  const filteredAreas = areas.filter((a) => {
-    const q = searchQuery.toLowerCase();
+  const filteredAreas = (areas || []).filter((a) => {
+    if (!a) return false;
+    const q = (searchQuery || '').toLowerCase();
+    const name = String(a.name || '').toLowerCase();
+    const owner = String(a.ownerName || '').toLowerCase();
+    const addr = String(a.address || '').toLowerCase();
+
     return (
-      a.name.toLowerCase().includes(q) ||
-      a.ownerName.toLowerCase().includes(q) ||
-      a.address.toLowerCase().includes(q)
+      name.includes(q) ||
+      owner.includes(q) ||
+      addr.includes(q)
     );
   });
 
@@ -111,11 +116,11 @@ export default function AreasList({ onOpenAddArea, onOpenEditArea }) {
             <tbody>
               {filteredAreas.length > 0 ? (
                 filteredAreas.map((area) => {
-                  // Calculate plots belonging to this area (by matching project / location name)
-                  const areaPlots = plots.filter(
+                  const areaNameLower = String(area.name || '').toLowerCase();
+                  const areaPlots = (plots || []).filter(
                     (p) =>
-                      p.project.toLowerCase() === area.name.toLowerCase() ||
-                      (p.location && p.location.toLowerCase().includes(area.name.toLowerCase()))
+                      String(p.project || '').toLowerCase() === areaNameLower ||
+                      (p.location && String(p.location).toLowerCase().includes(areaNameLower))
                   );
 
                   const availableCount = areaPlots.filter((p) => p.status === 'Available').length;

@@ -18,16 +18,24 @@ export default function PlotsList({ onOpenAddPlot, onOpenBookingModal, onOpenEdi
   const [projectFilter, setProjectFilter] = useState('All');
 
   // Filter projects unique list
-  const projectsList = ['All', ...new Set(plots.map((p) => p.project))];
+  const projectsList = ['All', ...new Set((plots || []).map((p) => p?.project).filter(Boolean))];
 
   // Active Area Object if selectedAreaFilter is active
-  const activeAreaObj = areas.find((a) => a.name.toLowerCase() === selectedAreaFilter.toLowerCase());
+  const activeAreaObj = (areas || []).find((a) => String(a?.name || '').toLowerCase() === String(selectedAreaFilter || '').toLowerCase());
 
-  const filteredPlots = plots.filter((p) => {
+  const filteredPlots = (plots || []).filter((p) => {
+    if (!p) return false;
+    const q = (searchQuery || '').toLowerCase();
+    const areaFilter = (selectedAreaFilter || '').toLowerCase();
+    const plotNum = String(p.plotNumber || '').toLowerCase();
+    const custName = String(p.customerName || '').toLowerCase();
+    const loc = String(p.location || '').toLowerCase();
+    const proj = String(p.project || '').toLowerCase();
+
     const matchesSearch =
-      p.plotNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.customerName && p.customerName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (p.location && p.location.toLowerCase().includes(searchQuery.toLowerCase()));
+      plotNum.includes(q) ||
+      custName.includes(q) ||
+      loc.includes(q);
 
     const matchesStatus = plotsFilter === 'All' || p.status === plotsFilter;
 
@@ -35,8 +43,8 @@ export default function PlotsList({ onOpenAddPlot, onOpenBookingModal, onOpenEdi
 
     const matchesArea =
       selectedAreaFilter === 'All' ||
-      p.project.toLowerCase() === selectedAreaFilter.toLowerCase() ||
-      (p.location && p.location.toLowerCase().includes(selectedAreaFilter.toLowerCase()));
+      proj === areaFilter ||
+      loc.includes(areaFilter);
 
     return matchesSearch && matchesStatus && matchesProject && matchesArea;
   });

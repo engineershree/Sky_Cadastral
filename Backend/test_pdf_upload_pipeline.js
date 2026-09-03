@@ -26,8 +26,8 @@ async function runPdfUploadAndDatabaseTest() {
 
   // 3. Trigger HTTP Upload API
   console.log('\n3. Triggering Backend PDF Extraction Pipeline API (POST /api/layouts/upload)...');
-  
-  const uploadResponse = await fetch('http://localhost:5000/api/layouts/upload', {
+  const API_BASE = process.env.API_BASE_URL || 'https://sky-cadastral.onrender.com/api';
+  const uploadResponse = await fetch(`${API_BASE}/layouts/upload`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

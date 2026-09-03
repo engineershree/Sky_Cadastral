@@ -2,14 +2,17 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 
 export default function SettingsView() {
-  const { letterhead, setLetterhead, showToast } = useApp();
+  const { letterhead, updateSystemSettings } = useApp();
 
   const [formConfig, setFormConfig] = useState(letterhead);
 
+  React.useEffect(() => {
+    setFormConfig(letterhead);
+  }, [letterhead]);
+
   const handleSave = (e) => {
     e.preventDefault();
-    setLetterhead(formConfig);
-    showToast('Official Letterhead & System Settings saved successfully!');
+    updateSystemSettings(formConfig);
   };
 
   return (

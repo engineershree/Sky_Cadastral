@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 
-export default function AddRevenueModal({ isOpen, onClose }) {
+export default function AddRevenueModal({ isOpen, onClose, initialDate }) {
   const { addRevenueEntry, plots } = useApp();
 
   const [plotNumber, setPlotNumber] = useState(plots[0]?.plotNumber || 'A-01');
@@ -9,8 +9,14 @@ export default function AddRevenueModal({ isOpen, onClose }) {
   const [type, setType] = useState('Booking'); // 'Booking' | 'Sale' | 'Other'
   const [amount, setAmount] = useState('');
   const [paymentType, setPaymentType] = useState('NEFT Transfer');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(initialDate || new Date().toISOString().split('T')[0]);
   const [note, setNote] = useState('');
+
+  React.useEffect(() => {
+    if (isOpen && initialDate) {
+      setDate(initialDate);
+    }
+  }, [isOpen, initialDate]);
 
   if (!isOpen) return null;
 

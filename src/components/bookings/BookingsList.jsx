@@ -16,18 +16,24 @@ export default function BookingsList({ onOpenBookingModal, onOpenMarkSold }) {
 
   const [statusFilter, setStatusFilter] = useState('All');
 
-  const filteredBookings = bookings.filter((b) => {
+  const filteredBookings = (bookings || []).filter((b) => {
+    if (!b) return false;
+    const q = (searchQuery || '').toLowerCase();
+    const plotNum = String(b.plotNumber || '').toLowerCase();
+    const custName = String(b.customerName || '').toLowerCase();
+    const bId = String(b.id || '').toLowerCase();
+
     const matchesSearch =
-      b.plotNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.id.toLowerCase().includes(searchQuery.toLowerCase());
+      plotNum.includes(q) ||
+      custName.includes(q) ||
+      bId.includes(q);
 
     const matchesStatus = statusFilter === 'All' || b.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
   const formatCurrency = (val) =>
-    `₹${val.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+    `₹${Number(val || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
   const handleViewPlot = (plotIdOrNumber) => {
     const plot = plots.find((p) => p.id === plotIdOrNumber || p.plotNumber === plotIdOrNumber);

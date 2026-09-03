@@ -1,14 +1,20 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 
-export default function AddExpenseModal({ isOpen, onClose }) {
+export default function AddExpenseModal({ isOpen, onClose, initialDate }) {
   const { addExpenseEntry } = useApp();
 
   const [category, setCategory] = useState('Marketing');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(initialDate || new Date().toISOString().split('T')[0]);
   const [note, setNote] = useState('');
+
+  React.useEffect(() => {
+    if (isOpen && initialDate) {
+      setDate(initialDate);
+    }
+  }, [isOpen, initialDate]);
 
   if (!isOpen) return null;
 
