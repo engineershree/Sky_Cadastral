@@ -287,22 +287,46 @@ export default function PlotViewer2D({
           strokeDasharray="7 4"
         />
 
-        {showDemoInfrastructure && (
-          <>
-        {/* Asphalt Roads */}
-        {ROADS.map((road) => (
-          <g key={road.id}>
+        {/* Extracted PDF Layout Infrastructure (Roads & Open Spaces) */}
+        {((layoutMetadata?.infrastructureGeometry?.roads || layoutMetadata?.infrastructure?.roads || []).length > 0) ? (
+          (layoutMetadata?.infrastructureGeometry?.roads || layoutMetadata?.infrastructure?.roads).map((road, idx) => (
+            <g key={road.id || `extracted-road-${idx}`}>
+              <path
+                d={coordinatesToSVGPath(road.coordinates)}
+                fill="url(#asphaltRoad)"
+                stroke="#334155"
+                strokeWidth="0.8"
+                strokeLinejoin="round"
+              />
+            </g>
+          ))
+        ) : (showDemoInfrastructure && (
+          ROADS.map((road) => (
+            <g key={road.id}>
+              <path
+                d={coordinatesToSVGPath(road.coordinates)}
+                fill="url(#asphaltRoad)"
+                stroke="#334155"
+                strokeWidth="0.8"
+                strokeLinejoin="round"
+              />
+            </g>
+          ))
+        ))}
+
+        {/* Extracted Open Spaces / Green Areas */}
+        {(layoutMetadata?.infrastructureGeometry?.openSpaces || layoutMetadata?.infrastructure?.openSpaces || []).map((space, idx) => (
+          <g key={space.id || `extracted-green-${idx}`}>
             <path
-              d={coordinatesToSVGPath(road.coordinates)}
-              fill="url(#asphaltRoad)"
-              stroke="#334155"
+              d={coordinatesToSVGPath(space.coordinates)}
+              fill="url(#sportsCourt)"
+              fillOpacity="0.4"
+              stroke="#16a34a"
               strokeWidth="0.8"
               strokeLinejoin="round"
             />
           </g>
         ))}
-          </>
-        )}
 
         {/* ==========================================================================
            CANONICAL LAND PLOTS (EXACT 1-TO-1 100% TRUE SCALE MATCHING 3D VIEW)

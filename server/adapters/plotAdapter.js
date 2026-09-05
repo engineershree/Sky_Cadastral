@@ -23,6 +23,7 @@ function normalizeStatus(status) {
 
 export function normalizePlot(row) {
   const coordinates = parsePolygonGeometry(row.polygon_geometry);
+  const edgeDimensions = parsePolygonGeometry(row.edge_dimensions);
 
   return {
     id: row.id,
@@ -32,6 +33,7 @@ export function normalizePlot(row) {
     facing: row.facing || 'North',
     price: Number(row.valuation) || 0,
     coordinates,
+    edgeDimensions,
     lengthFt: Number(row.length) || null,
     widthFt: Number(row.width) || null,
     surveyNumber: row.project || '',
@@ -44,6 +46,7 @@ export function normalizePlot(row) {
 export function normalizeLayout(row, projectRow = null) {
   const maxX = Number(row.bounding_width) || 800;
   const maxY = Number(row.bounding_height) || 600;
+  const infrastructure = parsePolygonGeometry(row.infrastructure_geometry);
 
   return {
     id: row.id,
@@ -55,6 +58,8 @@ export function normalizeLayout(row, projectRow = null) {
     approvalStatus: row.status,
     totalAreaSqFt: null,
     totalPlots: Number(row.extracted_plots_count) || 0,
+    infrastructureGeometry: infrastructure,
+    infrastructure: infrastructure,
     scaleFactor: 1.0,
     viewCenter: [maxX / 2, maxY / 2],
     bounds: { minX: 0, maxX, minY: 0, maxY },

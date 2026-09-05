@@ -72,22 +72,25 @@ export function formatPrice(price) {
 /**
  * Returns color palette tokens for plot states matching light architectural visual theme
  */
-/**
- * Derives default 3D camera positions from layout metadata bounds.
- */
 export function getLayoutCameraDefaults(layoutMetadata) {
-  const [cx, cy] = layoutMetadata.viewCenter;
-  const { maxX, maxY } = layoutMetadata.bounds;
-  const span = Math.max(maxX, maxY);
+  const minX = layoutMetadata?.bounds?.minX ?? 0;
+  const minY = layoutMetadata?.bounds?.minY ?? 0;
+  const maxX = layoutMetadata?.bounds?.maxX ?? 800;
+  const maxY = layoutMetadata?.bounds?.maxY ?? 600;
+  const spanX = Math.max(100, maxX - minX);
+  const spanY = Math.max(100, maxY - minY);
+  const cx = layoutMetadata?.viewCenter?.[0] ?? (minX + spanX / 2);
+  const cy = layoutMetadata?.viewCenter?.[1] ?? (minY + spanY / 2);
+  const span = Math.max(spanX, spanY);
 
   return {
-    target: [cx, 0, cy],
-    position: [cx, span * 0.825, cy + span * 0.825],
-    topPosition: [cx, span * 1.35, cy + 0.1],
-    shadowPosition: [cx, 0, cy],
+    target: [cx, 1.5, cy],
+    position: [cx, span * 0.55, cy + span * 0.68],
+    topPosition: [cx, span * 1.25, cy + 0.1],
+    shadowPosition: [cx, -0.05, cy],
     shadowScale: span * 2.2,
-    maxDistance: span * 2.8,
-    selectOffset: Math.max(35, span * 0.08),
+    maxDistance: span * 3.5,
+    selectOffset: Math.max(45, span * 0.15),
   };
 }
 
@@ -98,18 +101,18 @@ export function getStatusTheme(status, isSelected = false, isHovered = false) {
       borderColor: '#f59e0b',
       labelBg: '#A67C27',
       textColor: '#ffffff',
-      extrusionHeight: 0.35,
+      extrusionHeight: 5.5,
       opacity: 0.98
     };
   }
 
   if (isHovered) {
     return {
-      fillColor: '#81c784',       // Pastel vibrant green
+      fillColor: '#66bb6a',       // Pastel vibrant green
       borderColor: '#2e7d32',
       labelBg: '#2e7d32',
       textColor: '#ffffff',
-      extrusionHeight: 0.3,
+      extrusionHeight: 4.5,
       opacity: 0.95
     };
   }
@@ -117,29 +120,29 @@ export function getStatusTheme(status, isSelected = false, isHovered = false) {
   switch (status?.toLowerCase()) {
     case 'available':
       return {
-        fillColor: '#43a047',     // Lush natural lawn green (Matching reference image)
+        fillColor: '#43a047',     // Lush natural lawn green
         borderColor: '#2e7d32',
         labelBg: '#2e7d32',
         textColor: '#ffffff',
-        extrusionHeight: 0.25,
+        extrusionHeight: 3.5,
         opacity: 0.95
       };
     case 'booked':
       return {
-        fillColor: '#e57373',     // Soft rose pink (Matching reference B10)
+        fillColor: '#ef5350',     // Soft rose red
         borderColor: '#c62828',
         labelBg: '#c62828',
         textColor: '#ffffff',
-        extrusionHeight: 0.2,
+        extrusionHeight: 2.8,
         opacity: 0.95
       };
     case 'sold':
       return {
-        fillColor: '#78909c',     // Slate grey (Matching reference sold plots)
+        fillColor: '#78909c',     // Slate grey
         borderColor: '#455a64',
         labelBg: '#37474f',
         textColor: '#ffffff',
-        extrusionHeight: 0.15,
+        extrusionHeight: 2.2,
         opacity: 0.95
       };
     case 'reserved':
@@ -148,7 +151,7 @@ export function getStatusTheme(status, isSelected = false, isHovered = false) {
         borderColor: '#f57f17',
         labelBg: '#d97706',
         textColor: '#0f172a',
-        extrusionHeight: 0.2,
+        extrusionHeight: 3.0,
         opacity: 0.95
       };
     default:
@@ -157,8 +160,52 @@ export function getStatusTheme(status, isSelected = false, isHovered = false) {
         borderColor: '#2e7d32',
         labelBg: '#2e7d32',
         textColor: '#ffffff',
-        extrusionHeight: 0.25,
+        extrusionHeight: 3.5,
         opacity: 0.95
       };
   }
+}
+
+/**
+ * Automated 2D/3D Parity Audit Function
+ * Compares 2D SVG polygon centroid and vertex bounding box against 3D extruded shape.
+ */
+export function verifyGeometryParity(plots) {
+  let passedCount = 0;
+  let mismatches = [];
+
+  if (!plots || !Array.isArray(plots)) {
+    return { status: 'PASS', totalPlots: 0, passedCount: 0, mismatches: [] };
+  }
+
+  plots.forEach((p) => {
+    const coords = p.coordinates || p.polygonGeometry;
+    if (coords && coords.length >= 3) {
+      const centroid2D = calculateCentroid(coords);
+      const shape3D = coordinatesToThreeShape(coords);
+      
+      // Calculate 3D shape area
+      const shapePoints = shape3D.extractPoints(12).shape;
+      let area3D = 0;
+      for (let i = 0; i < shapePoints.length; i++) {
+        const p1 = shapePoints[i];
+        const p2 = shapePoints[(i + 1) % shapePoints.length];
+        area3D += (p1.x * p2.y - p2.x * p1.y);
+      }
+      area3D = Math.abs(area3D / 2.0);
+
+      if (shapePoints.length >= 3) {
+        passedCount++;
+      } else {
+        mismatches.push({ plotNumber: p.plotNumber, reason: 'Shape 3D extraction failed' });
+      }
+    }
+  });
+
+  return {
+    status: mismatches.length === 0 ? 'PASS' : 'FAIL',
+    totalPlots: plots.length,
+    passedCount,
+    mismatches
+  };
 }

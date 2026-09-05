@@ -104,8 +104,9 @@ export default function PlotMesh({
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow castShadow>
         <extrudeGeometry args={[shape, extrudeSettings]} />
         <meshStandardMaterial
+          attach="material-0"
           color={theme.fillColor}
-          roughness={0.5}
+          roughness={0.4}
           metalness={0.05}
           transparent={true}
           opacity={effectiveOpacity}
@@ -113,14 +114,22 @@ export default function PlotMesh({
           polygonOffsetFactor={1}
           polygonOffsetUnits={1}
         />
+        <meshStandardMaterial
+          attach="material-1"
+          color={isSelected ? '#d97706' : isHovered ? '#2e7d32' : '#1e293b'}
+          roughness={0.6}
+          metalness={0.1}
+          transparent={true}
+          opacity={effectiveOpacity}
+        />
       </mesh>
 
       {/* CAD Boundary Line Trim */}
-      <lineSegments rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+      <lineSegments rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
         <primitive object={edgesGeometry} attach="geometry" />
         <lineBasicMaterial
-          color={isSelected ? '#f59e0b' : isHovered ? '#ffffff' : theme.borderColor}
-          linewidth={isSelected ? 2.5 : isHovered ? 1.8 : 0.8}
+          color={isSelected ? '#fbbf24' : isHovered ? '#ffffff' : theme.borderColor}
+          linewidth={isSelected ? 2.8 : isHovered ? 2.0 : 1.0}
         />
       </lineSegments>
 

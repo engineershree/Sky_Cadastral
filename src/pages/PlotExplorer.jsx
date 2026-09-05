@@ -36,13 +36,42 @@ export default function PlotExplorer() {
       try {
         const data = await plotService.getLayout(layoutId);
         const meta = data.metadata || {};
+        const plotsList = data.plots || [];
+        let computedMinX = Infinity, computedMaxX = -Infinity, computedMinY = Infinity, computedMaxY = -Infinity;
+        plotsList.forEach((p) => {
+          const coords = p.coordinates || p.polygonGeometry;
+          if (coords && Array.isArray(coords)) {
+            coords.forEach(([x, y]) => {
+              if (x < computedMinX) computedMinX = x;
+              if (x > computedMaxX) computedMaxX = x;
+              if (y < computedMinY) computedMinY = y;
+              if (y > computedMaxY) computedMaxY = y;
+            });
+          }
+        });
+
+        const hasComputedBounds = isFinite(computedMinX) && isFinite(computedMaxX);
+        const calcMinX = hasComputedBounds ? Math.floor(computedMinX) : 0;
+        const calcMinY = hasComputedBounds ? Math.floor(computedMinY) : 0;
+        const calcMaxX = hasComputedBounds ? Math.ceil(computedMaxX) : (meta.boundingWidth || 800);
+        const calcMaxY = hasComputedBounds ? Math.ceil(computedMaxY) : (meta.boundingHeight || 600);
+
+        const safeBounds = meta.bounds || {
+          minX: calcMinX,
+          minY: calcMinY,
+          maxX: calcMaxX,
+          maxY: calcMaxY,
+          width: Math.max(100, calcMaxX - calcMinX),
+          height: Math.max(100, calcMaxY - calcMinY)
+        };
+
         const safeMeta = {
           ...meta,
-          bounds: meta.bounds || { minX: 0, maxX: meta.boundingWidth || 800, minY: 0, maxY: meta.boundingHeight || 600 },
-          viewCenter: meta.viewCenter || [(meta.boundingWidth || 800) / 2, (meta.boundingHeight || 600) / 2]
+          bounds: safeBounds,
+          viewCenter: meta.viewCenter || [(safeBounds.minX + safeBounds.maxX) / 2, (safeBounds.minY + safeBounds.maxY) / 2]
         };
         setLayoutMetadata(safeMeta);
-        setPlots(data.plots || []);
+        setPlots(plotsList);
       } catch (err) {
         console.error('Error loading layout data:', err);
         setLoadError(err.message || 'Unable to load this layout. Please try again.');

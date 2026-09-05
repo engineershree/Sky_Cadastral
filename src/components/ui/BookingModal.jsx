@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ShieldCheck, CheckCircle2, Phone, Mail, User, Building, Calendar, Clock, CreditCard, Lock, ArrowRight } from 'lucide-react';
+import { X, ShieldCheck, CheckCircle2, Phone, Mail, User, Calendar, Clock, CreditCard, Lock, ArrowRight } from 'lucide-react';
 import { formatPrice } from '../../utils/geometryUtils';
 import { bookingService } from '../../services/bookingService';
 
@@ -81,143 +81,146 @@ export default function BookingModal({
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="booking-modal-card max-w-lg w-full bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden text-slate-100" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
         {/* Modal Header */}
-        <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-950/80 border border-amber-700/60 rounded-xl text-amber-400">
-              <ShieldCheck className="w-5 h-5" />
+        <div className="modal-header-stitch">
+          <div className="modal-header-title">
+            <div className="modal-header-icon">
+              <ShieldCheck size={22} />
             </div>
-            <div>
-              <h3 className="text-base font-bold text-white tracking-wide">
-                {step === 3 ? 'Reservation & Appointment Confirmed' : 'Book Plot & Schedule Site Visit'}
+            <div className="modal-header-text">
+              <h3>
+                {step === 3 ? 'Reservation Confirmed' : 'Book Plot & Schedule Site Visit'}
               </h3>
-              <p className="text-xs text-slate-400">Sky Cadastral — Golden City Vita Demarcation Plan</p>
+              <p>Sky Cadastral — Golden City Demarcation</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+          <button onClick={onClose} className="modal-close-btn-stitch" aria-label="Close modal">
             <X size={18} />
           </button>
         </div>
 
         {/* Form Stepper */}
         {step < 3 && (
-          <div className="bg-slate-950/50 px-6 py-2 border-b border-slate-800 flex items-center justify-between text-xs font-semibold">
-            <span className={`flex items-center gap-1.5 ${step === 1 ? 'text-amber-400' : 'text-emerald-400'}`}>
-              <span className="w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center text-[10px]">1</span>
-              Site Visit & Details
-            </span>
-            <span className="text-slate-600">————</span>
-            <span className={`flex items-center gap-1.5 ${step === 2 ? 'text-amber-400' : 'text-slate-500'}`}>
-              <span className="w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center text-[10px]">2</span>
-              Token Payment Gateway
-            </span>
+          <div className="stepper-bar-stitch">
+            <div className={`step-pill ${step >= 1 ? (step === 1 ? 'active' : 'completed') : ''}`}>
+              <span className="step-num">1</span>
+              <span>Site Visit & Details</span>
+            </div>
+            <span style={{ color: '#cbd5e1' }}>— — —</span>
+            <div className={`step-pill ${step === 2 ? 'active' : ''}`}>
+              <span className="step-num">2</span>
+              <span>Token Payment Gateway</span>
+            </div>
           </div>
         )}
 
         {/* Step 1: Appointment & Customer Info */}
         {step === 1 && (
-          <form onSubmit={handleNextToPayment} className="p-6 space-y-4 text-xs">
-            {/* Plot Summary Card */}
-            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex items-center justify-between">
+          <form onSubmit={handleNextToPayment} className="form-body-stitch">
+            {/* Plot Summary Banner */}
+            <div className="plot-summary-banner-stitch">
               <div>
-                <span className="text-xs font-bold text-amber-400 block font-mono">PLOT {plot.plotNumber}</span>
-                <span className="text-slate-400 text-[11px]">{plot.area} sq.ft • {plot.facing || 'East'} Facing</span>
+                <span className="summary-plot-number">PLOT {plot.plotNumber}</span>
+                <div className="summary-plot-meta">{plot.area} sq.ft • {plot.facing || 'North'} Facing</div>
               </div>
-              <div className="text-right">
-                <span className="text-sm font-extrabold text-white font-mono">{formatPrice(plot.valuation || plot.price || 2500000)}</span>
+              <div>
+                <span className="summary-plot-price">{formatPrice(plot.valuation || plot.price || 2500000)}</span>
               </div>
             </div>
 
-            {error && <div className="p-3 bg-rose-950/80 border border-rose-800 text-rose-300 rounded-lg text-xs">{error}</div>}
+            {error && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem' }}>
+                {error}
+              </div>
+            )}
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Full Name *</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+            <div className="form-group-stitch">
+              <label className="form-label-stitch">Full Name *</label>
+              <div className="form-input-container">
+                <User className="form-input-icon" />
+                <input
+                  type="text"
+                  required
+                  placeholder="Enter your full name"
+                  value={formData.fullName}
+                  onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                  className="form-input-stitch"
+                />
+              </div>
+            </div>
+
+            <div className="form-grid-2col">
+              <div className="form-group-stitch">
+                <label className="form-label-stitch">Phone Number *</label>
+                <div className="form-input-container">
+                  <Phone className="form-input-icon" />
                   <input
-                    type="text"
+                    type="tel"
                     required
-                    placeholder="Enter your full name"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-slate-100 focus:border-amber-500 focus:outline-none"
+                    placeholder="+91 9876543210"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="form-input-stitch"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">Phone Number *</label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
-                    <input
-                      type="tel"
-                      required
-                      placeholder="+91 9876543210"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-slate-100 focus:border-amber-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">Email Address</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
-                    <input
-                      type="email"
-                      placeholder="name@example.com"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-slate-100 focus:border-amber-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 pt-1">
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1 flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 text-amber-400" /> Site Visit Date
-                  </label>
+              <div className="form-group-stitch">
+                <label className="form-label-stitch">Email Address</label>
+                <div className="form-input-container">
+                  <Mail className="form-input-icon" />
                   <input
-                    type="date"
-                    required
-                    value={formData.appointmentDate}
-                    onChange={(e) => setFormData({ ...formData, appointmentDate: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:border-amber-500 focus:outline-none font-mono"
+                    type="email"
+                    placeholder="name@example.com"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="form-input-stitch"
                   />
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1 flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5 text-amber-400" /> Visit Slot
-                  </label>
-                  <select
-                    value={formData.appointmentTime}
-                    onChange={(e) => setFormData({ ...formData, appointmentTime: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:border-amber-500 focus:outline-none"
-                  >
-                    <option value="10:00 AM">10:00 AM - Morning</option>
-                    <option value="11:30 AM">11:30 AM - Morning</option>
-                    <option value="02:30 PM">02:30 PM - Afternoon</option>
-                    <option value="04:30 PM">04:30 PM - Evening</option>
-                  </select>
                 </div>
               </div>
             </div>
 
-            <div className="pt-4 flex justify-end gap-3 border-t border-slate-800">
-              <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg">
+            <div className="form-grid-2col">
+              <div className="form-group-stitch">
+                <label className="form-label-stitch">
+                  <Calendar size={14} style={{ color: '#A67C27' }} /> Site Visit Date
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={formData.appointmentDate}
+                  onChange={(e) => setFormData({ ...formData, appointmentDate: e.target.value })}
+                  className="form-input-stitch"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                />
+              </div>
+
+              <div className="form-group-stitch">
+                <label className="form-label-stitch">
+                  <Clock size={14} style={{ color: '#A67C27' }} /> Visit Slot
+                </label>
+                <select
+                  value={formData.appointmentTime}
+                  onChange={(e) => setFormData({ ...formData, appointmentTime: e.target.value })}
+                  className="form-select-stitch"
+                >
+                  <option value="10:00 AM">10:00 AM - Morning</option>
+                  <option value="11:30 AM">11:30 AM - Morning</option>
+                  <option value="02:30 PM">02:30 PM - Afternoon</option>
+                  <option value="04:30 PM">04:30 PM - Evening</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="form-actions-stitch">
+              <button type="button" onClick={onClose} className="btn-secondary-stitch">
                 Cancel
               </button>
-              <button type="submit" className="px-5 py-2 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-bold rounded-lg flex items-center gap-2 shadow-lg">
+              <button type="submit" className="btn-primary-gold-stitch">
                 <span>Proceed to Payment</span>
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight size={16} />
               </button>
             </div>
           </form>
@@ -225,61 +228,67 @@ export default function BookingModal({
 
         {/* Step 2: Payment Gateway Interface */}
         {step === 2 && (
-          <div className="p-6 space-y-4 text-xs">
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
-              <div className="flex justify-between items-center text-slate-400">
-                <span>Token Booking Advance</span>
-                <span className="text-white font-mono font-bold">₹{formData.tokenAmount.toLocaleString('en-IN')}</span>
+          <div className="form-body-stitch">
+            <div className="plot-summary-banner-stitch" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyBetween: 'space-between', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.82rem', color: '#576375', fontWeight: 600 }}>Token Booking Advance</span>
+                <span style={{ fontSize: '1.1rem', color: '#001B3A', fontWeight: 900, fontFamily: "'JetBrains Mono', monospace" }}>
+                  ₹{formData.tokenAmount.toLocaleString('en-IN')}
+                </span>
               </div>
-              <div className="flex justify-between items-center text-slate-400 text-[11px]">
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#576375' }}>
                 <span>Plot Reference</span>
-                <span className="text-amber-400 font-mono">Plot {plot.plotNumber}</span>
+                <span style={{ color: '#A67C27', fontWeight: 700 }}>Plot {plot.plotNumber}</span>
               </div>
-              <div className="flex justify-between items-center text-slate-400 text-[11px]">
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: '#576375' }}>
                 <span>Appointment</span>
-                <span className="text-slate-200">{formData.appointmentDate} at {formData.appointmentTime}</span>
+                <span style={{ fontWeight: 600, color: '#001B3A' }}>{formData.appointmentDate} at {formData.appointmentTime}</span>
               </div>
             </div>
 
-            <div>
-              <label className="block text-slate-300 font-bold mb-2">Select Payment Method</label>
-              <div className="grid grid-cols-3 gap-2">
+            <div className="form-group-stitch">
+              <label className="form-label-stitch">Select Payment Method</label>
+              <div className="payment-options-grid">
                 {['UPI', 'CARD', 'NETBANKING'].map((method) => (
                   <button
                     key={method}
                     type="button"
                     onClick={() => setFormData({ ...formData, paymentMethod: method })}
-                    className={`py-3 px-2 rounded-xl border font-bold text-center transition-all ${
-                      formData.paymentMethod === method
-                        ? 'bg-amber-950/80 border-amber-500 text-amber-300 shadow-md'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
+                    className={`payment-card-btn-stitch ${formData.paymentMethod === method ? 'selected' : ''}`}
                   >
-                    {method === 'UPI' && '📱 UPI / GPay'}
-                    {method === 'CARD' && '💳 Credit/Debit Card'}
-                    {method === 'NETBANKING' && '🏦 Net Banking'}
+                    <span style={{ fontSize: '1.2rem' }}>
+                      {method === 'UPI' && '📱'}
+                      {method === 'CARD' && '💳'}
+                      {method === 'NETBANKING' && '🏦'}
+                    </span>
+                    <span>
+                      {method === 'UPI' && 'UPI / GPay'}
+                      {method === 'CARD' && 'Card'}
+                      {method === 'NETBANKING' && 'Net Banking'}
+                    </span>
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center gap-3">
-              <Lock className="w-5 h-5 text-emerald-400 shrink-0" />
-              <p className="text-[11px] text-slate-400">
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px 14px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Lock size={18} style={{ color: '#16a34a', flexShrink: 0 }} />
+              <p style={{ fontSize: '0.75rem', color: '#166534', margin: 0, lineHeight: 1.4 }}>
                 Protected by 256-Bit SSL Encryption. Token payment locks plot for 48 hours pending admin verification.
               </p>
             </div>
 
-            <div className="pt-4 flex justify-between gap-3 border-t border-slate-800">
-              <button type="button" onClick={() => setStep(1)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg">
+            <div className="form-actions-stitch">
+              <button type="button" onClick={() => setStep(1)} className="btn-secondary-stitch">
                 Back
               </button>
               <button
+                type="button"
                 onClick={handleFinalizeBookingAndPayment}
                 disabled={isSubmitting}
-                className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold rounded-lg flex items-center gap-2 shadow-lg disabled:opacity-50"
+                className="btn-primary-gold-stitch"
               >
-                <CreditCard className="w-4 h-4" />
+                <CreditCard size={16} />
                 <span>{isSubmitting ? 'Processing Token Payment...' : `Pay ₹${formData.tokenAmount.toLocaleString('en-IN')} & Confirm`}</span>
               </button>
             </div>
@@ -288,47 +297,50 @@ export default function BookingModal({
 
         {/* Step 3: Confirmation Success Receipt */}
         {step === 3 && confirmationData && (
-          <div className="p-6 space-y-4 text-xs text-center">
-            <div className="w-16 h-16 bg-emerald-950/80 border-2 border-emerald-500 rounded-full flex items-center justify-center mx-auto text-emerald-400 shadow-xl">
-              <CheckCircle2 className="w-8 h-8" />
+          <div className="form-body-stitch" style={{ textAlign: 'center', alignItems: 'center' }}>
+            <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#ecfdf5', border: '2px solid #10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#059669', margin: '0 auto' }}>
+              <CheckCircle2 size={32} />
             </div>
 
             <div>
-              <span className="bg-emerald-900/60 text-emerald-300 border border-emerald-700 px-3 py-1 rounded-full text-[11px] font-bold">
+              <span style={{ background: '#d1fae5', color: '#065f46', border: '1px solid #6ee7b7', padding: '4px 12px', borderRadius: '20px', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 APPOINTMENT & BOOKING RESERVED
               </span>
-              <h3 className="text-lg font-bold text-white mt-2">Token Advance Received!</h3>
-              <p className="text-slate-400 mt-1">
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#001B3A', marginTop: '10px', marginBottom: '4px' }}>
+                Token Advance Received!
+              </h3>
+              <p style={{ fontSize: '0.82rem', color: '#576375', margin: 0 }}>
                 Plot <strong>{confirmationData.plotNumber}</strong> is reserved. Appointment scheduled with Admin.
               </p>
             </div>
 
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-left space-y-2 font-mono">
-              <div className="flex justify-between border-b border-slate-800 pb-1.5">
-                <span className="text-slate-400">Booking Ref:</span>
-                <span className="text-amber-400 font-bold">{confirmationData.refNumber}</span>
+            <div style={{ background: '#f8fafc', border: '1px solid #E5E9EB', borderRadius: '12px', padding: '16px', width: '100%', textAlign: 'left', fontFamily: "'JetBrains Mono', monospace", fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E9EB', paddingBottom: '6px' }}>
+                <span style={{ color: '#64748b' }}>Booking Ref:</span>
+                <span style={{ color: '#A67C27', fontWeight: 800 }}>{confirmationData.refNumber}</span>
               </div>
-              <div className="flex justify-between border-b border-slate-800 pb-1.5">
-                <span className="text-slate-400">Payment Gateway TxID:</span>
-                <span className="text-cyan-400 font-bold">{confirmationData.transactionId}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E9EB', paddingBottom: '6px' }}>
+                <span style={{ color: '#64748b' }}>TxID:</span>
+                <span style={{ color: '#0284c7', fontWeight: 700 }}>{confirmationData.transactionId}</span>
               </div>
-              <div className="flex justify-between border-b border-slate-800 pb-1.5">
-                <span className="text-slate-400">Site Visit Scheduled:</span>
-                <span className="text-white">{confirmationData.appointmentDate} ({confirmationData.appointmentTime})</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E9EB', paddingBottom: '6px' }}>
+                <span style={{ color: '#64748b' }}>Site Visit:</span>
+                <span style={{ color: '#001B3A', fontWeight: 700 }}>{confirmationData.appointmentDate} ({confirmationData.appointmentTime})</span>
               </div>
-              <div className="flex justify-between border-b border-slate-800 pb-1.5">
-                <span className="text-slate-400">Customer:</span>
-                <span className="text-white">{confirmationData.fullName} ({confirmationData.phone})</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E9EB', paddingBottom: '6px' }}>
+                <span style={{ color: '#64748b' }}>Customer:</span>
+                <span style={{ color: '#001B3A', fontWeight: 700 }}>{confirmationData.fullName} ({confirmationData.phone})</span>
               </div>
-              <div className="flex justify-between pt-1">
-                <span className="text-slate-400">EmailJS Notification:</span>
-                <span className="text-emerald-400 font-bold">Dispatched to Admin</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '2px' }}>
+                <span style={{ color: '#64748b' }}>Notification:</span>
+                <span style={{ color: '#059669', fontWeight: 800 }}>Dispatched to Admin</span>
               </div>
             </div>
 
             <button
               onClick={onClose}
-              className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all"
+              className="btn-primary-gold-stitch"
+              style={{ width: '100%', justifyContent: 'center' }}
             >
               Done & Return to Map Explorer
             </button>
@@ -338,3 +350,4 @@ export default function BookingModal({
     </div>
   );
 }
+

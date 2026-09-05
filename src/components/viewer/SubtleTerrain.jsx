@@ -2,27 +2,33 @@ import React, { useMemo } from 'react';
 import * as THREE from 'three';
 
 export default function SubtleTerrain({ layoutMetadata }) {
-  const [centerX, centerY] = layoutMetadata.viewCenter;
-  const { maxX, maxY } = layoutMetadata.bounds;
+  const minX = layoutMetadata?.bounds?.minX || 0;
+  const minY = layoutMetadata?.bounds?.minY || 0;
+  const maxX = layoutMetadata?.bounds?.maxX || 800;
+  const maxY = layoutMetadata?.bounds?.maxY || 600;
+  const spanX = Math.max(100, maxX - minX);
+  const spanY = Math.max(100, maxY - minY);
+  const centerX = minX + spanX / 2;
+  const centerY = minY + spanY / 2;
 
   // Ground plane with natural height variations outside layout
   const terrainGeometry = useMemo(() => {
-    const geo = new THREE.PlaneGeometry(640, 560, 64, 64);
+    const geo = new THREE.PlaneGeometry(spanX * 2.5, spanY * 2.5, 64, 64);
     const pos = geo.attributes.position;
 
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i) + centerX;
       const y = pos.getY(i) + centerY;
 
-      const distFromLayoutX = Math.max(0, -x, x - maxX);
-      const distFromLayoutY = Math.max(0, -y, y - maxY);
+      const distFromLayoutX = Math.max(0, minX - 15 - x, x - (maxX + 15));
+      const distFromLayoutY = Math.max(0, minY - 15 - y, y - (maxY + 15));
       const maxDist = Math.max(distFromLayoutX, distFromLayoutY);
 
-      if (maxDist > 10) {
+      if (maxDist > 0) {
         const height =
-          Math.sin(x * 0.02) * Math.cos(y * 0.02) * 3.5 +
-          Math.sin(x * 0.05 + y * 0.03) * 1.8;
-        pos.setZ(i, Math.max(0, height * (maxDist / 60)));
+          Math.sin(x * 0.015) * Math.cos(y * 0.015) * 4.0 +
+          Math.sin(x * 0.04 + y * 0.02) * 2.0;
+        pos.setZ(i, Math.max(0, height * Math.min(1, maxDist / 50)));
       } else {
         pos.setZ(i, 0);
       }
@@ -30,45 +36,45 @@ export default function SubtleTerrain({ layoutMetadata }) {
 
     geo.computeVertexNormals();
     return geo;
-  }, [centerX, centerY, maxX, maxY]);
+  }, [centerX, centerY, minX, minY, maxX, maxY, spanX, spanY]);
 
   // Generate dense surrounding perimeter forest tree positions (North, South, East, West surrounding belt)
   const perimeterTrees = useMemo(() => {
     const trees = [];
     // North Forest Belt (Y > maxY + 12)
-    for (let x = -40; x <= maxX + 40; x += 12) {
-      for (let y = maxY + 14; y <= maxY + 60; y += 14) {
+    for (let x = minX - 40; x <= maxX + 40; x += 16) {
+      for (let y = maxY + 14; y <= maxY + 60; y += 16) {
         const jitterX = (Math.sin(x * 17 + y) * 4);
         const jitterY = (Math.cos(x + y * 13) * 4);
         trees.push({ pos: [x + jitterX, 0, y + jitterY], scale: 1.0 + (Math.abs(x % 3) * 0.25) });
       }
     }
-    // South Forest Belt (Y < -14)
-    for (let x = -40; x <= maxX + 40; x += 12) {
-      for (let y = -16; y >= -65; y -= 14) {
+    // South Forest Belt (Y < minY - 14)
+    for (let x = minX - 40; x <= maxX + 40; x += 16) {
+      for (let y = minY - 16; y >= minY - 65; y -= 16) {
         const jitterX = (Math.sin(x * 19 + y) * 4);
         const jitterY = (Math.cos(x + y * 11) * 4);
         trees.push({ pos: [x + jitterX, 0, y + jitterY], scale: 0.9 + (Math.abs(x % 4) * 0.2) });
       }
     }
-    // West Forest Belt (X < -14)
-    for (let y = -10; y <= maxY + 10; y += 12) {
-      for (let x = -16; x >= -60; x -= 14) {
+    // West Forest Belt (X < minX - 14)
+    for (let y = minY - 10; y <= maxY + 10; y += 16) {
+      for (let x = minX - 16; x >= minX - 60; x -= 16) {
         const jitterX = (Math.sin(x + y * 17) * 4);
         const jitterY = (Math.cos(x * 13 + y) * 4);
         trees.push({ pos: [x + jitterX, 0, y + jitterY], scale: 1.1 + (Math.abs(y % 3) * 0.2) });
       }
     }
     // East Forest Belt (X > maxX + 14)
-    for (let y = -10; y <= maxY + 10; y += 12) {
-      for (let x = maxX + 16; x <= maxX + 65; x += 14) {
+    for (let y = minY - 10; y <= maxY + 10; y += 16) {
+      for (let x = maxX + 16; x <= maxX + 65; x += 16) {
         const jitterX = (Math.sin(x + y * 23) * 4);
         const jitterY = (Math.cos(x * 7 + y) * 4);
         trees.push({ pos: [x + jitterX, 0, y + jitterY], scale: 1.0 + (Math.abs(y % 4) * 0.25) });
       }
     }
     return trees;
-  }, [maxX, maxY]);
+  }, [minX, minY, maxX, maxY]);
 
   // Boundary wall frame box coordinates around layout
   const wallHeight = 2.2;
@@ -80,11 +86,11 @@ export default function SubtleTerrain({ layoutMetadata }) {
       <mesh
         geometry={terrainGeometry}
         rotation={[-Math.PI / 2, 0, 0]}
-        position={[centerX, -0.08, centerY]}
+        position={[centerX, -0.3, centerY]}
         receiveShadow
       >
         <meshStandardMaterial
-          color="#386b31" // Natural rich meadow green
+          color="#2e5a28" // Natural rich deep meadow green
           roughness={0.9}
           metalness={0.05}
         />
@@ -93,12 +99,12 @@ export default function SubtleTerrain({ layoutMetadata }) {
       {/* Internal Development Manicured Lawn Soil Plate */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
-        position={[centerX, -0.04, centerY]}
+        position={[centerX, -0.15, centerY]}
         receiveShadow
       >
-        <planeGeometry args={[maxX + 16, maxY + 16]} />
+        <planeGeometry args={[spanX + 30, spanY + 30]} />
         <meshStandardMaterial
-          color="#4cae4f" // Vibrant development lawn green
+          color="#388e3c" // Vibrant development lawn green
           roughness={0.8}
           metalness={0.02}
         />
@@ -112,26 +118,26 @@ export default function SubtleTerrain({ layoutMetadata }) {
       </group>
 
       {/* Perimeter Boundary Wall - West Wall */}
-      <mesh position={[-2, wallHeight / 2, centerY]} receiveShadow castShadow>
-        <boxGeometry args={[wallThickness, wallHeight, maxY + 10]} />
+      <mesh position={[minX - 2, wallHeight / 2, centerY]} receiveShadow castShadow>
+        <boxGeometry args={[wallThickness, wallHeight, spanY + 10]} />
         <meshStandardMaterial color="#64748b" roughness={0.7} />
       </mesh>
 
       {/* Perimeter Boundary Wall - East Wall */}
       <mesh position={[maxX + 2, wallHeight / 2, centerY]} receiveShadow castShadow>
-        <boxGeometry args={[wallThickness, wallHeight, maxY + 10]} />
+        <boxGeometry args={[wallThickness, wallHeight, spanY + 10]} />
         <meshStandardMaterial color="#64748b" roughness={0.7} />
       </mesh>
 
       {/* Perimeter Boundary Wall - North Wall */}
       <mesh position={[centerX, wallHeight / 2, maxY + 2]} receiveShadow castShadow>
-        <boxGeometry args={[maxX + 10, wallHeight, wallThickness]} />
+        <boxGeometry args={[spanX + 10, wallHeight, wallThickness]} />
         <meshStandardMaterial color="#64748b" roughness={0.7} />
       </mesh>
 
       {/* Perimeter Boundary Wall - South Wall */}
-      <mesh position={[centerX, wallHeight / 2, -2]} receiveShadow castShadow>
-        <boxGeometry args={[maxX + 10, wallHeight, wallThickness]} />
+      <mesh position={[centerX, wallHeight / 2, minY - 2]} receiveShadow castShadow>
+        <boxGeometry args={[spanX + 10, wallHeight, wallThickness]} />
         <meshStandardMaterial color="#64748b" roughness={0.7} />
       </mesh>
     </group>

@@ -249,20 +249,26 @@ export default function PlotViewer3D({
 
         <SubtleTerrain layoutMetadata={layoutMetadata} />
 
-        {showDemoInfrastructure && (
-          <>
-            {ROADS.map((road) => (
-              <RoadMesh key={road.id} road={road} />
-            ))}
+        {/* Extracted 3D PDF Infrastructure Meshes */}
+        {((layoutMetadata?.infrastructureGeometry?.roads || layoutMetadata?.infrastructure?.roads || []).length > 0) ? (
+          (layoutMetadata?.infrastructureGeometry?.roads || layoutMetadata?.infrastructure?.roads).map((road, idx) => (
+            <RoadMesh key={road.id || `extracted-3d-road-${idx}`} road={road} />
+          ))
+        ) : (showDemoInfrastructure && (
+          ROADS.map((road) => (
+            <RoadMesh key={road.id} road={road} />
+          ))
+        ))}
 
-            {GREEN_AREAS.map((area) => (
-              <GreenAreaMesh key={area.id} area={area} />
-            ))}
-
-            <StreetLightMesh />
-            <Landscaping />
-          </>
-        )}
+        {((layoutMetadata?.infrastructureGeometry?.openSpaces || layoutMetadata?.infrastructure?.openSpaces || []).length > 0) ? (
+          (layoutMetadata?.infrastructureGeometry?.openSpaces || layoutMetadata?.infrastructure?.openSpaces).map((space, idx) => (
+            <GreenAreaMesh key={space.id || `extracted-3d-green-${idx}`} area={space} />
+          ))
+        ) : (showDemoInfrastructure && (
+          GREEN_AREAS.map((area) => (
+            <GreenAreaMesh key={area.id} area={area} />
+          ))
+        ))}
 
         {plots.map((plot) => {
           const isSelected = plot.id === selectedPlotId;

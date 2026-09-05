@@ -207,12 +207,32 @@ export const plotService = {
     }
 
     // 2. Fetch layout plots
+    let fetchedDirectly = false;
     try {
       const plotData = await apiClient.get(`/api/client/layouts/${areaId}/plots`);
       if (plotData && plotData.plots && plotData.plots.length > 0) {
         rawPlots = plotData.plots;
+        fetchedDirectly = true;
       }
     } catch (e) {}
+
+    // Fallback: If areaId was an unpopulated legacy demo ID (e.g., AREA-1788273673786), fetch active published layout plots
+    if (rawPlots.length === 0) {
+      try {
+        const pubLayouts = await apiClient.get('/api/client/published-layouts');
+        if (pubLayouts && pubLayouts.layouts && pubLayouts.layouts.length > 0) {
+          const activeLayoutId = pubLayouts.layouts[0].id;
+          const pubPlotData = await apiClient.get(`/api/client/layouts/${activeLayoutId}/plots`);
+          if (pubPlotData && pubPlotData.plots && pubPlotData.plots.length > 0) {
+            rawPlots = pubPlotData.plots;
+            fetchedDirectly = true;
+            if (pubLayouts.layouts[0].infrastructure_geometry) {
+              areaMeta = { ...areaMeta, infrastructureGeometry: pubLayouts.layouts[0].infrastructure_geometry };
+            }
+          }
+        }
+      } catch (e) {}
+    }
 
     // 3. Fallback to system plots table query
     if (rawPlots.length === 0) {
@@ -224,7 +244,9 @@ export const plotService = {
       } catch (e) {}
     }
 
-    const matched = matchPlotsForArea(rawPlots, areaId, areaMeta).map(normalizePlot);
+    const matched = fetchedDirectly
+      ? rawPlots.map(normalizePlot)
+      : matchPlotsForArea(rawPlots, areaId, areaMeta).map(normalizePlot);
 
     if (!areaMeta) {
       areaMeta = {
