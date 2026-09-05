@@ -18,7 +18,8 @@ const PORT = process.env.PORT || 5000;
 const upload = multer({ limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB max
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // 1. Health Check Endpoint & Neon DB Verification
 app.get('/api/health', async (req, res) => {
@@ -181,17 +182,26 @@ app.post('/api/cadastral/parse-pdf', upload.single('pdfFile'), async (req, res) 
 // POST /api/cadastral/save-verified-layout - Save Verified Plots & Layout to Database
 app.post('/api/cadastral/save-verified-layout', async (req, res) => {
   try {
-    const { layoutId, projectId, projectName, name, plots, forensicReport } = req.body;
+    const { layoutId, projectId, projectName, name, plots, infrastructureGeometry, forensicReport } = req.body;
     const targetLayoutId = layoutId || `LAYOUT-${Date.now()}`;
 
     // 1. Upsert Layout Record
     const layoutRes = await query(
-      `INSERT INTO layouts (id, project_id, project_name, name, status, extracted_plots_count, uploaded_at)
-       VALUES ($1, $2, $3, $4, 'Needs Verification', $5, CURRENT_DATE)
+      `INSERT INTO layouts (id, project_id, project_name, name, status, extracted_plots_count, infrastructure_geometry, uploaded_at)
+       VALUES ($1, $2, $3, $4, 'Needs Verification', $5, $6, CURRENT_DATE)
        ON CONFLICT (id) DO UPDATE 
-       SET extracted_plots_count = EXCLUDED.extracted_plots_count, status = 'Needs Verification'
+       SET extracted_plots_count = EXCLUDED.extracted_plots_count,
+           infrastructure_geometry = EXCLUDED.infrastructure_geometry,
+           status = 'Needs Verification'
        RETURNING *`,
-      [targetLayoutId, projectId || 'AREA-001', projectName || 'Golden City Vita Layout', name || 'Golden City Final Plan', plots.length]
+      [
+        targetLayoutId,
+        projectId || 'AREA-001',
+        projectName || 'Golden City Vita Layout',
+        name || 'Golden City Final Plan',
+        plots.length,
+        JSON.stringify(infrastructureGeometry || { roads: [], openSpaces: [] })
+      ]
     );
 
     // 2. Delete existing plots for layout if updating
@@ -202,8 +212,8 @@ app.post('/api/cadastral/save-verified-layout', async (req, res) => {
     for (const p of plots) {
       const plotDbId = `PLOT-${targetLayoutId}-${p.plotNumber}`;
       const plotRes = await query(
-        `INSERT INTO plots (id, plot_number, layout_id, project, area, unit, length, width, document_area, facing, facing_road_width, polygon_geometry, valuation, price_per_sqft, status, location, verification_status, valuation_notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+        `INSERT INTO plots (id, plot_number, layout_id, project, area, unit, length, width, document_area, facing, facing_road_width, polygon_geometry, edge_dimensions, valuation, price_per_sqft, status, location, verification_status, valuation_notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
         [
           plotDbId,
           p.plotNumber,
@@ -217,6 +227,7 @@ app.post('/api/cadastral/save-verified-layout', async (req, res) => {
           p.facing || 'North',
           p.facingRoadWidth || 40,
           JSON.stringify(p.polygonGeometry),
+          JSON.stringify(p.edgeDimensions || []),
           p.valuation || 2500000,
           p.pricePerSqFt || 2200,
           p.status || 'Available',
@@ -263,6 +274,12 @@ app.post('/api/cadastral/publish-layout', async (req, res) => {
         return res.status(400).json({
           success: false,
           error: `Publishing blocked: ${forensicReport.geometryMismatchCount} plots have geometry vs table area mismatches exceeding tolerance.`
+        });
+      }
+      if (forensicReport.overlapCount && forensicReport.overlapCount > 0) {
+        return res.status(400).json({
+          success: false,
+          error: `Publishing blocked: ${forensicReport.overlapCount} pairs of plot polygons overlap (${forensicReport.totalOverlapAreaSqft} sq.ft total overlap).`
         });
       }
     }
@@ -1244,10 +1261,18 @@ app.post('/api/plots', async (req, res) => {
       valuationNotes
     } = req.body;
 
-    const id = req.body.id || `PLOT-${Date.now()}`;
+    const pnumDigits = parseInt((plotNumber || '').replace(/\D/g, ''), 10) || 1;
+    const col = (pnumDigits - 1) % 6;
+    const rowIdx = Math.floor((pnumDigits - 1) / 6);
+    const startX = 50 + col * 120;
+    const startY = 50 + rowIdx * 90;
+    const pWidth = (width || 30) * 1.8;
+    const pLength = (length || 40) * 1.8;
     const defaultPolygon = [
-      [100, 100], [100 + (length || 40) * 2, 100],
-      [100 + (length || 40) * 2, 100 + (width || 30) * 2], [100, 100 + (width || 30) * 2]
+      [startX, startY],
+      [startX + pWidth, startY],
+      [startX + pWidth, startY + pLength],
+      [startX, startY + pLength]
     ];
 
     const { rows } = await query(
@@ -1429,5 +1454,9 @@ if (fs.existsSync(distPath)) {
 
 app.listen(PORT, () => {
   console.log(`🚀 Sky Cadastral Backend API running on http://localhost:${PORT}`);
-  console.log(`Connected to Neon DB: ${process.env.DATABASE_URL.split('@')[1]}`);
+  if (process.env.DATABASE_URL) {
+    console.log(`Connected to Neon DB: ${process.env.DATABASE_URL.split('@')[1] || 'Neon Postgres'}`);
+  } else {
+    console.log('Running in local DB / SQLite / In-Memory cache mode');
+  }
 });

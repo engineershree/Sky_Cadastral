@@ -53,10 +53,11 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
           officialAreaSqm: p.officialAreaSqm,
           areaDifferenceSqm: p.areaDifferenceSqm,
           unit: 'sq.ft',
-          length: 50,
-          width: 30,
-          facing: idx % 4 === 0 ? 'North' : idx % 4 === 1 ? 'East' : idx % 4 === 2 ? 'South' : 'West',
-          facingRoadWidth: idx % 2 === 0 ? 40 : 30,
+          length: p.length || 50,
+          width: p.width || 30,
+          edgeDimensions: p.edgeDimensions || [],
+          facing: p.facing || 'East',
+          facingRoadWidth: p.facingRoadWidth || 30,
           polygonGeometry: p.polygonGeometry,
           pricePerSqFt: 2200 + (idx % 5) * 100,
           valuation: Math.round((p.officialAreaSqft || p.calculatedAreaSqft) * (2200 + (idx % 5) * 100)),
@@ -67,11 +68,31 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
             : `Geometry area mismatch: calculated ${p.calculatedAreaSqm} sqm vs official table ${p.officialAreaSqm} sqm.`
         }));
 
+        // Compute layout bounds from extracted plot geometries
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        plots.forEach((p) => {
+          if (p.polygonGeometry && Array.isArray(p.polygonGeometry)) {
+            p.polygonGeometry.forEach(([x, y]) => {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            });
+          }
+        });
+
+        const bounds = (isFinite(minX) && isFinite(maxX))
+          ? { minX: Math.floor(minX), maxX: Math.ceil(maxX), minY: Math.floor(minY), maxY: Math.ceil(maxY), width: Math.ceil(maxX - minX), height: Math.ceil(maxY - minY) }
+          : { minX: 0, maxX: jsonResult.forensicReport?.pageDimensionsPt?.width || 1200, minY: 0, maxY: jsonResult.forensicReport?.pageDimensionsPt?.height || 800, width: 1200, height: 800 };
+
         resolve({
           forensicReport: jsonResult.forensicReport,
           officialTableMap: jsonResult.officialTableMap,
           plots: plots,
           extractedPlotsCount: plots.length,
+          infrastructureGeometry: jsonResult.infrastructureGeometry || { roads: [], openSpaces: [] },
+          bounds: bounds,
+          viewCenter: [(bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2],
           unmatchedPolygons: jsonResult.unmatchedPolygons || [],
           diagnostics: {
             pagesProcessed: jsonResult.forensicReport?.pageCount || 1,

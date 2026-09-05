@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS layouts (
     bounding_width NUMERIC(10, 2) DEFAULT 800,
     bounding_height NUMERIC(10, 2) DEFAULT 600,
     extracted_plots_count INT DEFAULT 0,
+    infrastructure_geometry JSONB DEFAULT '{"roads":[],"openSpaces":[]}'::jsonb,
     uploaded_at VARCHAR(64),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS plots (
     facing VARCHAR(64),
     facing_road_width NUMERIC(10, 2),
     polygon_geometry JSONB NOT NULL,
+    edge_dimensions JSONB DEFAULT '[]'::jsonb,
     valuation NUMERIC(14, 2) NOT NULL,
     price_per_sqft NUMERIC(12, 2) NOT NULL,
     status VARCHAR(32) DEFAULT 'Available', -- 'Available', 'Booked', 'Sold', 'Blocked'
