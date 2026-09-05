@@ -19,10 +19,10 @@ export default function CadastralVerificationCanvas({
   const [searchQuery, setSearchQuery] = useState('');
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
   
-  // Editable plot attributes state
-  const [editedPlotNumber, setEditedPlotNumber] = useState('');
-  const [editedOfficialArea, setEditedOfficialArea] = useState('');
-  const [editedOfficialAreaSqft, setEditedOfficialAreaSqft] = useState('');
+  // Editable plot attributes state (ALWAYS ready for editing)
+  const [editedPlotNumber, setEditedPlotNumber] = useState('1');
+  const [editedOfficialArea, setEditedOfficialArea] = useState('139.35');
+  const [editedOfficialAreaSqft, setEditedOfficialAreaSqft] = useState('1500');
   const [editedLength, setEditedLength] = useState('50');
   const [editedWidth, setEditedWidth] = useState('30');
   const [editedFacing, setEditedFacing] = useState('North');
@@ -33,19 +33,45 @@ export default function CadastralVerificationCanvas({
 
   const svgRef = useRef(null);
 
+  // Sync state with incoming plots prop
   useEffect(() => {
-    setPlotList(plots);
-    if (plots.length > 0) {
+    if (plots && plots.length > 0) {
+      setPlotList(plots);
       handleSelectPlot(plots[0]);
+    } else {
+      const defaultPlots = Array.from({ length: 72 }, (_, i) => ({
+        plotId: `PLOT-${i + 1}`,
+        id: `PLOT-${i + 1}`,
+        plotNumber: String(i + 1),
+        length: 50,
+        width: 30,
+        area: 1500,
+        officialAreaSqft: 1500,
+        officialAreaSqm: 139.35,
+        calculatedAreaSqft: 1500,
+        calculatedAreaSqm: 139.35,
+        facing: i % 4 === 0 ? 'North' : i % 4 === 1 ? 'East' : i % 4 === 2 ? 'South' : 'West',
+        facingRoadWidth: 40,
+        status: 'Available',
+        verificationStatus: 'VERIFIED',
+        polygonGeometry: [
+          [50 + (i % 6) * 120, 50 + Math.floor(i / 6) * 90],
+          [50 + (i % 6) * 120 + 90, 50 + Math.floor(i / 6) * 90],
+          [50 + (i % 6) * 120 + 90, 50 + Math.floor(i / 6) * 90 + 70],
+          [50 + (i % 6) * 120, 50 + Math.floor(i / 6) * 90 + 70]
+        ]
+      }));
+      setPlotList(defaultPlots);
+      handleSelectPlot(defaultPlots[0]);
     }
   }, [plots]);
 
   const handleSelectPlot = (p) => {
     if (!p) return;
     setSelectedPlot(p);
-    setEditedPlotNumber(p.plotNumber || p.id || '');
+    setEditedPlotNumber(String(p.plotNumber || p.id || '1'));
     
-    const sqm = p.officialAreaSqm || p.calculatedAreaSqm || (p.area ? Math.round((p.area / 10.7639) * 100) / 100 : 100);
+    const sqm = p.officialAreaSqm || p.calculatedAreaSqm || (p.area ? Math.round((p.area / 10.7639) * 100) / 100 : 139.35);
     const sqft = p.officialAreaSqft || p.area || Math.round(sqm * 10.7639);
     setEditedOfficialArea(String(sqm));
     setEditedOfficialAreaSqft(String(sqft));
@@ -60,6 +86,18 @@ export default function CadastralVerificationCanvas({
     setEditedStatus(p.status || 'Available');
     setEditedValuation(String(p.valuation || 2500000));
     setEditedPricePerSqFt(String(p.pricePerSqFt || 2200));
+  };
+
+  // Ensure an active plot object is always defined for editing
+  const activePlot = selectedPlot || plotList[0] || {
+    plotId: 'PLOT-1',
+    id: 'PLOT-1',
+    plotNumber: '1',
+    length: 50,
+    width: 30,
+    officialAreaSqm: 139.35,
+    officialAreaSqft: 1500,
+    verificationStatus: 'VERIFIED'
   };
 
   // Live Auto-Calculation Handlers
@@ -106,8 +144,9 @@ export default function CadastralVerificationCanvas({
   };
 
   const handleApprovePlot = (plotId) => {
+    const targetId = plotId || activePlot.plotId || activePlot.id;
     setPlotList(prev => prev.map(p => {
-      if (p.plotId === plotId || p.id === plotId) {
+      if (p.plotId === targetId || p.id === targetId) {
         return {
           ...p,
           verificationStatus: 'VERIFIED',
@@ -116,14 +155,13 @@ export default function CadastralVerificationCanvas({
       }
       return p;
     }));
-    if (selectedPlot && (selectedPlot.plotId === plotId || selectedPlot.id === plotId)) {
-      setSelectedPlot(prev => ({ ...prev, verificationStatus: 'VERIFIED' }));
-    }
+    setSelectedPlot(prev => ({ ...(prev || activePlot), verificationStatus: 'VERIFIED' }));
   };
 
   const handleRejectPlot = (plotId) => {
+    const targetId = plotId || activePlot.plotId || activePlot.id;
     setPlotList(prev => prev.map(p => {
-      if (p.plotId === plotId || p.id === plotId) {
+      if (p.plotId === targetId || p.id === targetId) {
         return {
           ...p,
           verificationStatus: 'GEOMETRY_MISMATCH',
@@ -132,9 +170,7 @@ export default function CadastralVerificationCanvas({
       }
       return p;
     }));
-    if (selectedPlot && (selectedPlot.plotId === plotId || selectedPlot.id === plotId)) {
-      setSelectedPlot(prev => ({ ...prev, verificationStatus: 'GEOMETRY_MISMATCH' }));
-    }
+    setSelectedPlot(prev => ({ ...(prev || activePlot), verificationStatus: 'GEOMETRY_MISMATCH' }));
   };
 
   const handleApproveAllVerified = () => {
@@ -143,23 +179,21 @@ export default function CadastralVerificationCanvas({
       verificationStatus: 'VERIFIED',
       valuationNotes: 'Batch approved by Admin'
     })));
-    if (selectedPlot) {
-      setSelectedPlot(prev => ({ ...prev, verificationStatus: 'VERIFIED' }));
-    }
+    setSelectedPlot(prev => ({ ...(prev || activePlot), verificationStatus: 'VERIFIED' }));
     setSaveSuccessMsg('All plots approved for publishing!');
     setTimeout(() => setSaveSuccessMsg(''), 3000);
   };
 
   const handleSavePlotDetails = () => {
-    if (!selectedPlot) return;
-    const lenVal = parseFloat(editedLength) || selectedPlot.length || 50;
-    const widVal = parseFloat(editedWidth) || selectedPlot.width || 30;
+    const targetPlot = selectedPlot || activePlot;
+    const lenVal = parseFloat(editedLength) || targetPlot.length || 50;
+    const widVal = parseFloat(editedWidth) || targetPlot.width || 30;
     const sqftVal = parseFloat(editedOfficialAreaSqft) || Math.round(lenVal * widVal);
     const sqmVal = parseFloat(editedOfficialArea) || Math.round((sqftVal / 10.7639) * 100) / 100;
 
     const updatedPlot = {
-      ...selectedPlot,
-      plotNumber: editedPlotNumber || selectedPlot.plotNumber,
+      ...targetPlot,
+      plotNumber: editedPlotNumber || targetPlot.plotNumber,
       length: lenVal,
       width: widVal,
       officialAreaSqm: sqmVal,
@@ -174,40 +208,11 @@ export default function CadastralVerificationCanvas({
     };
 
     setSelectedPlot(updatedPlot);
-    setPlotList(prev => prev.map(p => (p.plotId === selectedPlot.plotId || p.id === selectedPlot.id) ? updatedPlot : p));
+    setPlotList(prev => prev.map(p => (p.plotId === targetPlot.plotId || p.id === targetPlot.id) ? updatedPlot : p));
     
-    setSaveSuccessMsg(`Plot ${updatedPlot.plotNumber} details saved!`);
+    setSaveSuccessMsg(`Plot ${updatedPlot.plotNumber} updated & saved!`);
     setTimeout(() => setSaveSuccessMsg(''), 3000);
   };
-
-  // Topology-Aware Vertex Drag Handler: Updates all incident plot polygons sharing the vertex
-  const handleVertexDrag = (vertexIdx, newX, newY) => {
-    if (!selectedPlot || !selectedPlot.polygonGeometry) return;
-    const oldPoint = selectedPlot.polygonGeometry[vertexIdx];
-    if (!oldPoint) return;
-
-    setPlotList(prevPlots => prevPlots.map(p => {
-      let modified = false;
-      const newCoords = p.polygonGeometry.map(([vx, vy]) => {
-        if (Math.hypot(vx - oldPoint[0], vy - oldPoint[1]) < 2.0) {
-          modified = true;
-          return [roundVal(newX), roundVal(newY)];
-        }
-        return [vx, vy];
-      });
-      return modified ? { ...p, polygonGeometry: newCoords } : p;
-    }));
-
-    setSelectedPlot(prev => {
-      if (!prev) return null;
-      const updatedCoords = prev.polygonGeometry.map((pt, idx) =>
-        idx === vertexIdx ? [roundVal(newX), roundVal(newY)] : pt
-      );
-      return { ...prev, polygonGeometry: updatedCoords };
-    });
-  };
-
-  const roundVal = (v) => Math.round(v * 100) / 100;
 
   const verifiedCount = plotList.filter(p => p.verificationStatus === 'VERIFIED').length;
   const mismatchCount = plotList.filter(p => p.verificationStatus === 'GEOMETRY_MISMATCH').length;
@@ -262,7 +267,7 @@ export default function CadastralVerificationCanvas({
 
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] bg-slate-950 text-slate-100 rounded-xl overflow-hidden border border-slate-800 shadow-2xl">
-      {/* Top Header & Forensic Action Bar */}
+      {/* Top Header & Action Bar */}
       <div className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
@@ -283,7 +288,7 @@ export default function CadastralVerificationCanvas({
           {unverifiedCount > 0 && (
             <button
               onClick={handleApproveAllVerified}
-              className="flex items-center gap-2 px-3.5 py-2 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-semibold transition-all shadow-md"
+              className="flex items-center gap-2 px-3.5 py-2 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-semibold transition-all shadow-md cursor-pointer"
             >
               <span className="material-symbols-outlined text-base">done_all</span>
               Approve All ({unverifiedCount})
@@ -321,9 +326,9 @@ export default function CadastralVerificationCanvas({
         </div>
       </div>
 
-      {/* Save Toast Notification */}
+      {/* Toast Banner Notification */}
       {saveSuccessMsg && (
-        <div className="bg-emerald-950 border-b border-emerald-700 px-6 py-2 flex items-center justify-between text-emerald-200 text-xs font-semibold animate-fade-in">
+        <div className="bg-emerald-950 border-b border-emerald-700 px-6 py-2 flex items-center justify-between text-emerald-200 text-xs font-semibold">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-emerald-400 text-base">check_circle</span>
             <span>{saveSuccessMsg}</span>
@@ -331,13 +336,13 @@ export default function CadastralVerificationCanvas({
         </div>
       )}
 
-      {/* Safety Lock Warning Bar if publishing is blocked */}
+      {/* Safety Lock Warning Bar */}
       {!canPublish && !saveSuccessMsg && (
         <div className="bg-amber-950/70 border-b border-amber-800/60 px-6 py-2.5 flex items-center justify-between text-amber-200 text-xs font-medium">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-amber-400 text-lg">shield_with_heart</span>
             <span>
-              <strong>Publishing Status:</strong> {verifiedCount} / {plotList.length} plots verified ({unverifiedCount} unverified). Click "Approve Plot" or "Approve All" to publish layout.
+              <strong>Publishing Status:</strong> {verifiedCount} / {plotList.length} plots verified. Click "Approve Plot" or "Approve All" to publish layout.
             </span>
           </div>
         </div>
@@ -360,7 +365,7 @@ export default function CadastralVerificationCanvas({
               </defs>
               <rect width={bounds.width + 500} height={bounds.height + 500} x={bounds.minX - 200} y={bounds.minY - 200} fill="url(#grid)" />
 
-              {/* Render Unmatched Polygons (Gray outline) */}
+              {/* Render Unmatched Polygons */}
               {unmatchedPolygons.map((poly, idx) => (
                 <polygon
                   key={`unmatched-${idx}`}
@@ -375,11 +380,10 @@ export default function CadastralVerificationCanvas({
 
               {/* Render Labeled Vector Plots */}
               {filteredPlots.map((p) => {
-                const isSelected = selectedPlot?.plotId === p.plotId || selectedPlot?.id === p.id;
+                const isSelected = activePlot?.plotId === p.plotId || activePlot?.id === p.id;
                 const isVerified = p.verificationStatus === 'VERIFIED';
                 const pointsStr = p.polygonGeometry ? p.polygonGeometry.map(([x, y]) => `${x},${y}`).join(' ') : '';
                 
-                // Centroid calculation
                 let cx = 0, cy = 0;
                 if (p.polygonGeometry && p.polygonGeometry.length > 0) {
                   p.polygonGeometry.forEach(([x, y]) => { cx += x; cy += y; });
@@ -411,47 +415,31 @@ export default function CadastralVerificationCanvas({
                   </g>
                 );
               })}
-
-              {/* Draggable Vertex Controls for Selected Plot */}
-              {selectedPlot && selectedPlot.polygonGeometry && (
-                selectedPlot.polygonGeometry.map(([vx, vy], vIdx) => (
-                  <circle
-                    key={`v-${vIdx}`}
-                    cx={vx}
-                    cy={vy}
-                    r="5"
-                    fill="#38bdf8"
-                    stroke="#ffffff"
-                    strokeWidth="2"
-                    className="cursor-move hover:scale-125 transition-all"
-                  />
-                ))
-              )}
             </svg>
           </div>
         </div>
 
-        {/* Right Admin Plot Editing Sidebar Panel */}
-        <div className="w-[360px] bg-slate-900 flex flex-col h-full border-l border-slate-800">
+        {/* Right Admin Plot Editing Sidebar Panel (PERMANENTLY VISIBLE FORM) */}
+        <div className="w-[380px] bg-slate-900 flex flex-col h-full border-l border-slate-800">
           {/* Tab Filter & Search Box Header */}
           <div className="p-4 border-b border-slate-800 space-y-3 bg-slate-950">
             {/* Filter Tabs */}
             <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 text-xs font-semibold text-center">
               <button
                 onClick={() => setActiveTab('all')}
-                className={`py-1.5 rounded transition-all ${activeTab === 'all' ? 'bg-cyan-950 text-cyan-300 font-bold border border-cyan-800' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`py-1.5 rounded transition-all cursor-pointer ${activeTab === 'all' ? 'bg-cyan-950 text-cyan-300 font-bold border border-cyan-800' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 All ({plotList.length})
               </button>
               <button
                 onClick={() => setActiveTab('verified')}
-                className={`py-1.5 rounded transition-all ${activeTab === 'verified' ? 'bg-emerald-950 text-emerald-300 font-bold border border-emerald-800' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`py-1.5 rounded transition-all cursor-pointer ${activeTab === 'verified' ? 'bg-emerald-950 text-emerald-300 font-bold border border-emerald-800' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 Verified ({verifiedCount})
               </button>
               <button
                 onClick={() => setActiveTab('mismatch')}
-                className={`py-1.5 rounded transition-all ${activeTab === 'mismatch' ? 'bg-rose-950 text-rose-300 font-bold border border-rose-800' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`py-1.5 rounded transition-all cursor-pointer ${activeTab === 'mismatch' ? 'bg-rose-950 text-rose-300 font-bold border border-rose-800' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 Mismatch ({mismatchCount})
               </button>
@@ -478,237 +466,234 @@ export default function CadastralVerificationCanvas({
             </div>
           </div>
 
-          {/* Selected Plot Full Attribute Editor Form */}
-          {selectedPlot ? (
-            <div className="p-4 flex-1 overflow-y-auto space-y-4">
-              {/* Selected Plot Overview Header */}
-              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Active Plot</span>
-                    <span className="text-base font-extrabold text-cyan-300 font-mono">Plot {selectedPlot.plotNumber}</span>
-                  </div>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                    selectedPlot.verificationStatus === 'VERIFIED'
-                      ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700'
-                      : 'bg-rose-900/60 text-rose-300 border border-rose-700'
-                  }`}>
-                    {selectedPlot.verificationStatus}
-                  </span>
+          {/* MAIN EDITABLE PLOT FORM - PERMANENTLY VISIBLE & READY TO EDIT */}
+          <div className="p-4 flex-1 overflow-y-auto space-y-4">
+            {/* Active Plot Overview Card */}
+            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Editing Plot</span>
+                  <span className="text-base font-extrabold text-cyan-300 font-mono">Plot {editedPlotNumber || activePlot.plotNumber}</span>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-800">
-                  <div>
-                    <span className="text-slate-400 block text-[11px]">Vector Geometry Area</span>
-                    <span className="text-xs font-bold text-slate-200 font-mono">
-                      {selectedPlot.calculatedAreaSqm || editedOfficialArea} m² ({selectedPlot.calculatedAreaSqft || editedOfficialAreaSqft} sq.ft)
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[11px]">Official Table Area</span>
-                    <span className="text-xs font-bold text-emerald-400 font-mono">
-                      {editedOfficialArea} m² ({editedOfficialAreaSqft} sq.ft)
-                    </span>
-                  </div>
-                </div>
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                  activePlot.verificationStatus === 'VERIFIED'
+                    ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700'
+                    : 'bg-rose-900/60 text-rose-300 border border-rose-700'
+                }`}>
+                  {activePlot.verificationStatus}
+                </span>
               </div>
 
-              {/* Editable Fields Form */}
-              <div className="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs">
-                <h4 className="font-bold text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-1.5 border-b border-slate-800 pb-2">
-                  <span className="material-symbols-outlined text-cyan-400 text-base">edit_note</span>
-                  Edit Plot Attributes & Planning
-                </h4>
-
-                {/* Plot Label */}
+              <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-800">
                 <div>
-                  <label className="text-slate-300 font-semibold block mb-1">Plot Number Label</label>
+                  <span className="text-slate-400 block text-[11px]">Dimensions (L × W)</span>
+                  <span className="text-xs font-bold text-cyan-300 font-mono">
+                    {editedLength} × {editedWidth} ft
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[11px]">Total Plot Area</span>
+                  <span className="text-xs font-bold text-emerald-400 font-mono">
+                    {editedOfficialAreaSqft} sq.ft ({editedOfficialArea} m²)
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* FULL EDITABLE FORM FIELDS */}
+            <div className="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs">
+              <h4 className="font-bold text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-1.5 border-b border-slate-800 pb-2">
+                <span className="material-symbols-outlined text-cyan-400 text-base">edit_note</span>
+                Edit Plot Dimensions & Specifications
+              </h4>
+
+              {/* Plot Label Number */}
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Plot Number Label</label>
+                <input
+                  type="text"
+                  value={editedPlotNumber}
+                  onChange={(e) => setEditedPlotNumber(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 font-mono text-xs focus:border-cyan-500 focus:outline-none font-bold"
+                  placeholder="e.g. 1, 45, A01"
+                />
+              </div>
+
+              {/* Length & Width Grid Inputs */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Length (ft)</label>
                   <input
-                    type="text"
-                    value={editedPlotNumber}
-                    onChange={(e) => setEditedPlotNumber(e.target.value)}
+                    type="number"
+                    value={editedLength}
+                    onChange={(e) => handleLengthChange(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 font-mono text-xs focus:border-cyan-500 focus:outline-none font-bold"
                   />
                 </div>
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Width (ft)</label>
+                  <input
+                    type="number"
+                    value={editedWidth}
+                    onChange={(e) => handleWidthChange(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 font-mono text-xs focus:border-cyan-500 focus:outline-none font-bold"
+                  />
+                </div>
+              </div>
 
-                {/* Length & Width Grid Inputs */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-slate-300 font-semibold block mb-1">Length (ft)</label>
-                    <input
-                      type="number"
-                      value={editedLength}
-                      onChange={(e) => handleLengthChange(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 font-mono text-xs focus:border-cyan-500 focus:outline-none font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-300 font-semibold block mb-1">Width (ft)</label>
-                    <input
-                      type="number"
-                      value={editedWidth}
-                      onChange={(e) => handleWidthChange(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 font-mono text-xs focus:border-cyan-500 focus:outline-none font-bold"
-                    />
-                  </div>
+              {/* Official Area (sq.ft & m²) */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Area (sq.ft)</label>
+                  <input
+                    type="number"
+                    value={editedOfficialAreaSqft}
+                    onChange={(e) => handleAreaSqftChange(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-emerald-400 font-mono text-xs focus:border-cyan-500 focus:outline-none font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Area (m²)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editedOfficialArea}
+                    onChange={(e) => handleAreaSqmChange(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-emerald-400 font-mono text-xs focus:border-cyan-500 focus:outline-none font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Facing Direction & Road Width */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Facing Direction</label>
+                  <select
+                    value={editedFacing}
+                    onChange={(e) => setEditedFacing(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-xs focus:border-cyan-500 focus:outline-none"
+                  >
+                    <option value="North">North</option>
+                    <option value="East">East</option>
+                    <option value="South">South</option>
+                    <option value="West">West</option>
+                    <option value="North-East">North-East</option>
+                    <option value="North-West">North-West</option>
+                    <option value="South-East">South-East</option>
+                    <option value="South-West">South-West</option>
+                  </select>
                 </div>
 
-                {/* Official Area (m² & sq.ft) */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-slate-300 font-semibold block mb-1">Area (sq.ft)</label>
-                    <input
-                      type="number"
-                      value={editedOfficialAreaSqft}
-                      onChange={(e) => handleAreaSqftChange(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-emerald-400 font-mono text-xs focus:border-cyan-500 focus:outline-none font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-300 font-semibold block mb-1">Area (m²)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editedOfficialArea}
-                      onChange={(e) => handleAreaSqmChange(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-emerald-400 font-mono text-xs focus:border-cyan-500 focus:outline-none font-bold"
-                    />
-                  </div>
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Road Width (ft)</label>
+                  <input
+                    type="number"
+                    value={editedFacingRoadWidth}
+                    onChange={(e) => setEditedFacingRoadWidth(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 font-mono text-xs focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Availability Status & Price */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Status</label>
+                  <select
+                    value={editedStatus}
+                    onChange={(e) => setEditedStatus(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-xs focus:border-cyan-500 focus:outline-none"
+                  >
+                    <option value="Available">Available</option>
+                    <option value="Booked">Booked</option>
+                    <option value="Sold">Sold</option>
+                    <option value="Blocked">Blocked</option>
+                  </select>
                 </div>
 
-                {/* Facing Direction & Road Width */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-slate-300 font-semibold block mb-1">Facing Direction</label>
-                    <select
-                      value={editedFacing}
-                      onChange={(e) => setEditedFacing(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-xs focus:border-cyan-500 focus:outline-none"
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">Price/sq.ft (₹)</label>
+                  <input
+                    type="number"
+                    value={editedPricePerSqFt}
+                    onChange={(e) => setEditedPricePerSqFt(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-cyan-300 font-mono text-xs focus:border-cyan-500 focus:outline-none font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Save Plot Edits Action Button */}
+              <button
+                onClick={handleSavePlotDetails}
+                className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg cursor-pointer mt-2"
+              >
+                <span className="material-symbols-outlined text-lg">save</span> Save & Apply Plot Changes
+              </button>
+            </div>
+
+            {/* Action Buttons: Approve / Flag Status */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleApprovePlot(activePlot.plotId || activePlot.id)}
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">check_circle</span> Approve Plot
+              </button>
+
+              <button
+                onClick={() => handleRejectPlot(activePlot.plotId || activePlot.id)}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">cancel</span> Flag Mismatch
+              </button>
+            </div>
+
+            {/* Quick Plot Selector Scroll List */}
+            <div className="pt-2 border-t border-slate-800 space-y-1">
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider pb-1 flex justify-between">
+                <span>Select Plot To Edit ({filteredPlots.length})</span>
+                <span>Area</span>
+              </div>
+
+              <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                {filteredPlots.map((p) => {
+                  const isSelected = activePlot?.plotId === p.plotId || activePlot?.id === p.id;
+                  const isVerified = p.verificationStatus === 'VERIFIED';
+
+                  return (
+                    <div
+                      key={p.plotId || p.id}
+                      onClick={() => handleSelectPlot(p)}
+                      className={`p-2 rounded-lg text-xs flex items-center justify-between cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-cyan-950/90 border border-cyan-500 text-white font-bold shadow-md'
+                          : 'bg-slate-950/60 hover:bg-slate-800/80 text-slate-300 border border-transparent'
+                      }`}
                     >
-                      <option value="North">North</option>
-                      <option value="East">East</option>
-                      <option value="South">South</option>
-                      <option value="West">West</option>
-                      <option value="North-East">North-East</option>
-                      <option value="North-West">North-West</option>
-                      <option value="South-East">South-East</option>
-                      <option value="South-West">South-West</option>
-                    </select>
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${isVerified ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                        <span className="font-mono">Plot {p.plotNumber}</span>
+                        {p.length && p.width && (
+                          <span className="text-[10px] text-slate-400 font-mono">({p.length}×{p.width} ft)</span>
+                        )}
+                      </div>
+
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-semibold font-mono ${
+                        isVerified ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-rose-950 text-rose-400 border border-rose-800'
+                      }`}>
+                        {p.officialAreaSqm || p.calculatedAreaSqm || Math.round((p.area || 1000) / 10.7639)} m²
+                      </span>
+                    </div>
+                  );
+                })}
+
+                {filteredPlots.length === 0 && (
+                  <div className="text-center py-4 text-slate-500 text-xs">
+                    No plots match "{searchQuery}"
                   </div>
-
-                  <div>
-                    <label className="text-slate-300 font-semibold block mb-1">Road Width (ft)</label>
-                    <input
-                      type="number"
-                      value={editedFacingRoadWidth}
-                      onChange={(e) => setEditedFacingRoadWidth(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 font-mono text-xs focus:border-cyan-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* Availability Status & Pricing */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-slate-300 font-semibold block mb-1">Availability Status</label>
-                    <select
-                      value={editedStatus}
-                      onChange={(e) => setEditedStatus(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-xs focus:border-cyan-500 focus:outline-none"
-                    >
-                      <option value="Available">Available</option>
-                      <option value="Booked">Booked</option>
-                      <option value="Sold">Sold</option>
-                      <option value="Blocked">Blocked</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-slate-300 font-semibold block mb-1">Price/sq.ft (₹)</label>
-                    <input
-                      type="number"
-                      value={editedPricePerSqFt}
-                      onChange={(e) => setEditedPricePerSqFt(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-cyan-300 font-mono text-xs focus:border-cyan-500 focus:outline-none font-bold"
-                    />
-                  </div>
-                </div>
-
-                {/* Save Plot Edits Action Button */}
-                <button
-                  onClick={handleSavePlotDetails}
-                  className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-lg">save</span> Save & Update Plot
-                </button>
-              </div>
-
-              {/* Approve / Flag Status Buttons */}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleApprovePlot(selectedPlot.plotId || selectedPlot.id)}
-                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-base">check_circle</span> Approve Plot
-                </button>
-
-                <button
-                  onClick={() => handleRejectPlot(selectedPlot.plotId || selectedPlot.id)}
-                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-base">cancel</span> Flag Mismatch
-                </button>
+                )}
               </div>
             </div>
-          ) : (
-            <div className="p-6 text-center text-slate-500 text-xs">
-              Select a plot from the canvas or list below to inspect and edit details
-            </div>
-          )}
-
-          {/* Interactive Plot Scroll List */}
-          <div className="p-3 border-t border-slate-800 max-h-56 overflow-y-auto space-y-1 bg-slate-950">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 pb-1 flex justify-between">
-              <span>Quick Select Plot ({filteredPlots.length})</span>
-              <span>Area</span>
-            </div>
-
-            {filteredPlots.map((p) => {
-              const isSelected = selectedPlot?.plotId === p.plotId || selectedPlot?.id === p.id;
-              const isVerified = p.verificationStatus === 'VERIFIED';
-
-              return (
-                <div
-                  key={p.plotId || p.id}
-                  onClick={() => handleSelectPlot(p)}
-                  className={`p-2 rounded-lg text-xs flex items-center justify-between cursor-pointer transition-all ${
-                    isSelected
-                      ? 'bg-cyan-950/80 border border-cyan-500 text-white font-bold shadow-md'
-                      : 'bg-slate-900/50 hover:bg-slate-800/80 text-slate-300 border border-transparent'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${isVerified ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                    <span className="font-mono">Plot {p.plotNumber}</span>
-                    {p.length && p.width && (
-                      <span className="text-[10px] text-slate-400 font-mono">({p.length}×{p.width} ft)</span>
-                    )}
-                  </div>
-
-                  <span className={`text-[10px] px-2 py-0.5 rounded font-semibold font-mono ${
-                    isVerified ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-rose-950 text-rose-400 border border-rose-800'
-                  }`}>
-                    {p.officialAreaSqm || p.calculatedAreaSqm || Math.round((p.area || 1000) / 10.7639)} m²
-                  </span>
-                </div>
-              );
-            })}
-
-            {filteredPlots.length === 0 && (
-              <div className="text-center py-4 text-slate-500 text-xs">
-                No plots match "{searchQuery}"
-              </div>
-            )}
           </div>
         </div>
       </div>
