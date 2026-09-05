@@ -30,13 +30,33 @@ export default function Map3DView({ onOpenBookingModal }) {
     const width = container.clientWidth;
     const height = container.clientHeight || 550;
 
+    // Compute dynamic center & span from plot geometries
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    layoutPlots.forEach((p) => {
+      if (p.polygonGeometry && Array.isArray(p.polygonGeometry)) {
+        p.polygonGeometry.forEach(([x, y]) => {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        });
+      }
+    });
+
+    const centerX = isFinite(minX) ? (minX + maxX) / 2 : 450;
+    const centerY = isFinite(minY) ? (minY + maxY) / 2 : 300;
+    const spanX = isFinite(minX) ? maxX - minX : 800;
+    const spanY = isFinite(minY) ? maxY - minY : 600;
+    const maxSpan = Math.max(spanX, spanY, 400);
+    const scaleFactor = 0.18;
+
     // 1. Scene & Camera Setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x001229); // Deep Sky Navy
-    scene.fog = new THREE.FogExp2(0x001229, 0.005);
+    scene.fog = new THREE.FogExp2(0x001229, 0.003);
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 1, 1000);
-    camera.position.set(0, 110, 140);
+    const camera = new THREE.PerspectiveCamera(45, width / height, 1, 2000);
+    camera.position.set(0, maxSpan * 0.22, maxSpan * 0.3);
     camera.lookAt(0, 0, 0);
 
     // 2. WebGL Renderer
@@ -49,26 +69,26 @@ export default function Map3DView({ onOpenBookingModal }) {
     container.appendChild(renderer.domElement);
 
     // 3. Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
     scene.add(ambientLight);
 
     const dirLight = new THREE.DirectionalLight(0xfffaed, 1.3);
-    dirLight.position.set(60, 120, 60);
+    dirLight.position.set(maxSpan * 0.3, maxSpan * 0.5, maxSpan * 0.3);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
     dirLight.shadow.mapSize.height = 2048;
     scene.add(dirLight);
 
-    const pointLight = new THREE.PointLight(0xa67c27, 2.5, 150);
-    pointLight.position.set(0, 40, 0);
+    const pointLight = new THREE.PointLight(0xa67c27, 2.5, maxSpan * 1.5);
+    pointLight.position.set(0, maxSpan * 0.3, 0);
     scene.add(pointLight);
 
     // 4. Ground Grid Terrain & Baseboard
-    const gridHelper = new THREE.GridHelper(260, 52, 0xa67c27, 0x1e3a5f);
+    const gridHelper = new THREE.GridHelper(maxSpan * scaleFactor * 2.2, 50, 0xa67c27, 0x1e3a5f);
     gridHelper.position.y = -0.1;
     scene.add(gridHelper);
 
-    const planeGeo = new THREE.PlaneGeometry(300, 300);
+    const planeGeo = new THREE.PlaneGeometry(maxSpan * scaleFactor * 3, maxSpan * scaleFactor * 3);
     const planeMat = new THREE.MeshStandardMaterial({
       color: 0x011c3b,
       roughness: 0.8,
@@ -84,34 +104,27 @@ export default function Map3DView({ onOpenBookingModal }) {
     const plotMeshes = [];
 
     layoutPlots.forEach((plot) => {
-      const coords = plot.polygonGeometry || [
-        [50, 50],
-        [150, 50],
-        [150, 150],
-        [50, 150]
-      ];
+      const coords = plot.polygonGeometry || [];
+      if (!coords || coords.length < 3) return;
 
-      if (coords.length < 3) return;
-
-      // Create 2D Three.js Shape from plot polygon geometry
+      // Create 2D Three.js Shape centered at origin
       const shape = new THREE.Shape();
       coords.forEach(([px, py], idx) => {
-        // Translate and scale 2D SVG canvas coords into 3D world space centered at origin
-        const wx = (px - 450) * 0.22;
-        const wz = (py - 300) * 0.22;
+        const wx = (px - centerX) * scaleFactor;
+        const wz = (py - centerY) * scaleFactor;
         if (idx === 0) shape.moveTo(wx, wz);
         else shape.lineTo(wx, wz);
       });
 
-      const plotHeight = plot.status === 'Sold' ? 10 : plot.status === 'Booked' ? 7 : 4;
+      const plotHeight = plot.status === 'Sold' ? 6 : plot.status === 'Booked' ? 4 : 2.5;
 
       const extrudeSettings = {
         depth: plotHeight,
         bevelEnabled: true,
         bevelSegments: 2,
         steps: 1,
-        bevelSize: 0.4,
-        bevelThickness: 0.4
+        bevelSize: 0.2,
+        bevelThickness: 0.2
       };
 
       const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
@@ -176,11 +189,7 @@ export default function Map3DView({ onOpenBookingModal }) {
         y: e.clientY - previousMousePosition.y,
       };
 
-      const deltaRotationQuaternion = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(0, ((deltaMove.x * Math.PI) / 180) * 0.4, 0, 'XYZ')
-      );
-
-      scene.quaternion.multiplyQuaternions(deltaRotationQuaternion, scene.quaternion);
+      scene.rotation.y += (deltaMove.x * Math.PI) / 180 * 0.5;
       previousMousePosition = { x: e.clientX, y: e.clientY };
     };
 
@@ -192,11 +201,10 @@ export default function Map3DView({ onOpenBookingModal }) {
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
 
-    // 8. Animation Loop
+    // 8. Animation Loop (Stable render without auto-spin)
     let animationFrameId;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
-      scene.rotation.y += 0.0008; // Gentle orbit rotation
       renderer.render(scene, camera);
     };
 

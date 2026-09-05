@@ -379,7 +379,7 @@ export default function CadastralVerificationCanvas({
               ))}
 
               {/* Render Labeled Vector Plots */}
-              {filteredPlots.map((p) => {
+              {filteredPlots.map((p, idx) => {
                 const isSelected = activePlot?.plotId === p.plotId || activePlot?.id === p.id;
                 const isVerified = p.verificationStatus === 'VERIFIED';
                 const pointsStr = p.polygonGeometry ? p.polygonGeometry.map(([x, y]) => `${x},${y}`).join(' ') : '';
@@ -392,7 +392,7 @@ export default function CadastralVerificationCanvas({
                 }
 
                 return (
-                  <g key={p.plotId || p.id} onClick={() => handleSelectPlot(p)} className="cursor-pointer">
+                  <g key={`svg-plot-${p.plotId || p.id || 'p'}-${idx}`} onClick={() => handleSelectPlot(p)} className="cursor-pointer">
                     <polygon
                       points={pointsStr}
                       fill={isSelected ? '#0284c7' : isVerified ? '#059669' : '#dc2626'}
@@ -656,13 +656,13 @@ export default function CadastralVerificationCanvas({
               </div>
 
               <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
-                {filteredPlots.map((p) => {
+                {filteredPlots.map((p, idx) => {
                   const isSelected = activePlot?.plotId === p.plotId || activePlot?.id === p.id;
                   const isVerified = p.verificationStatus === 'VERIFIED';
 
                   return (
                     <div
-                      key={p.plotId || p.id}
+                      key={`list-plot-${p.plotId || p.id || 'p'}-${idx}`}
                       onClick={() => handleSelectPlot(p)}
                       className={`p-2 rounded-lg text-xs flex items-center justify-between cursor-pointer transition-all ${
                         isSelected

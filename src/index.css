@@ -100,3 +100,32 @@ body {
   background-color: #f2f0f3;
   color: #74777f;
 }
+
+/* ==========================================================================
+   ADMIN FORM & MODAL UI ENHANCEMENTS
+   ========================================================================== */
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #A67C27 !important;
+  box-shadow: 0 0 0 3px rgba(166, 124, 39, 0.15) !important;
+  outline: none !important;
+}
+
+.form-input-focus {
+  transition: all 0.2s ease-in-out;
+}
+
+.form-input-focus:focus {
+  border-color: #A67C27 !important;
+  box-shadow: 0 0 0 3px rgba(166, 124, 39, 0.2) !important;
+}
+
+button {
+  transition: all 0.2s ease;
+}
+
+button:active {
+  transform: translateY(0);
+}

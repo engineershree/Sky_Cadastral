@@ -72,23 +72,29 @@ function MainAppContent() {
     setForensicReportModalOpen(true);
   };
 
+  const RENDER_API_BASE = 'https://sky-cadastral.onrender.com/api';
+  const LOCAL_API_BASE = 'http://localhost:5000/api';
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? LOCAL_API_BASE : RENDER_API_BASE);
+
   const handleSaveVerifiedLayout = async (verifiedPlots) => {
     try {
-      const res = await fetch('/api/cadastral/save-verified-layout', {
+      const res = await fetch(`${API_BASE}/cadastral/save-verified-layout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          layoutId: 'LAYOUT-GOLDEN-CITY',
+          layoutId: 'LAYOUT-GOLDEN-001',
+          projectId: 'AREA-001',
           projectName: 'Golden City Vita Layout',
-          name: 'Golden City Final Plan Model',
+          name: 'Golden City Final Sanctioned Plan',
           plots: verifiedPlots,
           forensicReport: currentForensicReport
         })
       });
       if (res.ok) {
-        showToast('✅ Verified geometries successfully saved to Neon PostgreSQL database!');
+        showToast('✅ Verified geometries successfully saved to backend database!');
       } else {
-        showToast('⚠️ Geometries updated locally (Backend server offline).');
+        const errData = await res.json().catch(() => ({}));
+        showToast(`⚠️ ${errData.error || 'Geometries updated locally.'}`);
       }
     } catch (e) {
       showToast('⚠️ Saved verified geometries locally.');
@@ -97,15 +103,15 @@ function MainAppContent() {
 
   const handlePublishLayout = async () => {
     try {
-      const res = await fetch('/api/cadastral/publish-layout', {
+      const res = await fetch(`${API_BASE}/cadastral/publish-layout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          layoutId: 'LAYOUT-GOLDEN-CITY',
+          layoutId: 'LAYOUT-GOLDEN-001',
           forensicReport: currentForensicReport
         })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
         showToast('🎉 Layout Plan successfully published to 2D & 3D client platforms!');
       } else {

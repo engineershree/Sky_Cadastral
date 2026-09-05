@@ -122,6 +122,40 @@ export default function Map2DView({ onOpenBookingModal }) {
     return { x: cx / pts.length, y: cy / pts.length };
   };
 
+  const bounds = React.useMemo(() => {
+    if (!layoutPlots || layoutPlots.length === 0) {
+      return { minX: 0, minY: 0, maxX: 1200, maxY: 800, width: 1200, height: 800 };
+    }
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    layoutPlots.forEach((p) => {
+      const coords = p.polygonGeometry;
+      if (coords && Array.isArray(coords)) {
+        coords.forEach(([x, y]) => {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        });
+      }
+    });
+    if (!isFinite(minX) || !isFinite(maxX)) {
+      return { minX: 0, minY: 0, maxX: 1200, maxY: 800, width: 1200, height: 800 };
+    }
+    const pad = 40;
+    const cMinX = Math.max(0, minX - pad);
+    const cMinY = Math.max(0, minY - pad);
+    const cMaxX = maxX + pad;
+    const cMaxY = maxY + pad;
+    return {
+      minX: Math.floor(cMinX),
+      minY: Math.floor(cMinY),
+      maxX: Math.ceil(cMaxX),
+      maxY: Math.ceil(cMaxY),
+      width: Math.ceil(Math.max(200, cMaxX - cMinX)),
+      height: Math.ceil(Math.max(200, cMaxY - cMinY))
+    };
+  }, [layoutPlots]);
+
   return (
     <div className="p-6 lg:p-10 max-w-[1440px] mx-auto space-y-6 animate-in fade-in duration-300">
       {/* Header Bar */}
@@ -274,7 +308,7 @@ export default function Map2DView({ onOpenBookingModal }) {
             <svg
               ref={svgRef}
               className="w-full h-full min-h-[500px]"
-              viewBox="0 0 950 650"
+              viewBox={`${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`}
               onMouseDown={handleSvgMouseDown}
               onMouseMove={handleSvgMouseMove}
               onMouseUp={handleSvgMouseUp}
@@ -288,52 +322,28 @@ export default function Map2DView({ onOpenBookingModal }) {
               {/* Pan & Zoom Transformer Group */}
               <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
                 {/* Background Grid */}
-                <rect id="bg-grid" width="2000" height="2000" x="-500" y="-500" fill="url(#grid)" />
+                <rect id="bg-grid" width={bounds.width + 1000} height={bounds.height + 1000} x={bounds.minX - 500} y={bounds.minY - 500} fill="url(#grid)" />
 
                 {/* --- REAL SOURCE PDF LAYOUT DRAWING OVERLAY LAYER --- */}
                 {showPdfOverlay && (
                   <g opacity={pdfOpacity} pointerEvents="none">
                     {/* CAD Blueprint Drawing Box */}
                     <rect
-                      x="30"
-                      y="10"
-                      width="890"
-                      height="610"
+                      x={bounds.minX + 10}
+                      y={bounds.minY + 10}
+                      width={bounds.width - 20}
+                      height={bounds.height - 20}
                       fill="none"
                       stroke="#A67C27"
                       strokeWidth="2"
                       strokeDasharray="6,3"
                     />
-                    <rect
-                      x="34"
-                      y="14"
-                      width="882"
-                      height="602"
-                      fill="none"
-                      stroke="rgba(166, 124, 39, 0.4)"
-                      strokeWidth="1"
-                    />
 
                     {/* PDF Title Stamp Block */}
-                    <rect x="50" y="20" width="420" height="30" fill="rgba(166, 124, 39, 0.15)" rx="4" />
-                    <text x="60" y="40" fill="#fcd34d" fontSize="13" fontWeight="bold" fontFamily="monospace">
-                      SOURCE PDF: {currentLayout?.originalPdfName || 'sample_cadastral_layout.pdf'}
+                    <rect x={bounds.minX + 20} y={bounds.minY + 20} width="420" height="30" fill="rgba(166, 124, 39, 0.15)" rx="4" />
+                    <text x={bounds.minX + 30} y={bounds.minY + 40} fill="#fcd34d" fontSize="13" fontWeight="bold" fontFamily="monospace">
+                      SOURCE PDF: {currentLayout?.originalPdfName || 'master_cadastral_layout.pdf'}
                     </text>
-
-                    {/* PDF Demarcation Lines (Original Vector Lines from PDF) */}
-                    <line x1="45" y1="160" x2="910" y2="160" stroke="#fcd34d" strokeWidth="1.5" strokeDasharray="3,3" />
-                    <line x1="45" y1="310" x2="910" y2="310" stroke="#fcd34d" strokeWidth="1.5" strokeDasharray="3,3" />
-                    <line x1="45" y1="470" x2="910" y2="470" stroke="#fcd34d" strokeWidth="1.5" strokeDasharray="3,3" />
-
-                    {/* Plot PDF Outline Vector Boxes */}
-                    <rect x="50" y="50" width="160" height="100" fill="rgba(255,255,255,0.05)" stroke="#fcd34d" strokeWidth="1.5" />
-                    <text x="130" y="95" fill="#fcd34d" fontSize="10" fontFamily="monospace" textAnchor="middle">PDF P-101 (50x30ft)</text>
-
-                    <rect x="225" y="50" width="200" height="100" fill="rgba(255,255,255,0.05)" stroke="#fcd34d" strokeWidth="1.5" />
-                    <text x="325" y="95" fill="#fcd34d" fontSize="10" fontFamily="monospace" textAnchor="middle">PDF P-102 (60x30ft)</text>
-
-                    <polygon points="520,175 710,175 740,250 680,305 520,295" fill="rgba(255,255,255,0.05)" stroke="#fcd34d" strokeWidth="1.5" />
-                    <text x="630" y="240" fill="#fcd34d" fontSize="10" fontFamily="monospace" textAnchor="middle">PDF P-103 (Irregular)</text>
                   </g>
                 )}
 
