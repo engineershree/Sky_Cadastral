@@ -9,7 +9,7 @@ router.get('/:plotId', async (req, res) => {
     const { plotId } = req.params;
 
     const result = await query(
-      `SELECT p.*
+      `SELECT p.*, l.original_pdf_url, l.original_pdf_name
        FROM plots p
        INNER JOIN layouts l ON l.id = p.layout_id
        WHERE p.id = $1

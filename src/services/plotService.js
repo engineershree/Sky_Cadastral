@@ -2,6 +2,18 @@ import { apiClient } from './apiClient';
 
 function normalizePlot(p) {
   const geom = p.polygonGeometry || p.coordinates || (typeof p.polygon_geometry === 'string' ? JSON.parse(p.polygon_geometry) : p.polygon_geometry);
+  let docs = p.documents || [];
+  if (typeof docs === 'string') {
+    try {
+      docs = JSON.parse(docs);
+    } catch {
+      docs = [];
+    }
+  }
+  const defaultPdf = '/GOLDEN_CITY_FINAL_PLAN.pdf';
+  const pdfUrl = p.pdfUrl || p.pdf_url || p.originalPdfUrl || p.original_pdf_url || defaultPdf;
+  const pdfName = p.pdfName || p.pdf_name || p.originalPdfName || p.original_pdf_name || 'Golden City Plot Demarcation Plan.pdf';
+
   return {
     ...p,
     id: p.id,
@@ -22,7 +34,12 @@ function normalizePlot(p) {
     status: p.status || 'Available',
     location: p.location || '',
     verificationStatus: p.verificationStatus || p.verification_status || 'Verified',
-    isAvailable: p.status === 'Available'
+    isAvailable: p.status === 'Available',
+    documents: docs,
+    pdfUrl,
+    pdfName,
+    layoutPdfUrl: pdfUrl,
+    layoutPdfName: pdfName,
   };
 }
 

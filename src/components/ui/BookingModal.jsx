@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ShieldCheck, CheckCircle2, Phone, Mail, User, Calendar, Clock, CreditCard, Lock, ArrowRight } from 'lucide-react';
+import { X, ShieldCheck, CheckCircle2, Phone, Mail, User, Calendar, Clock, CreditCard, Lock, ArrowRight, FileText, Download } from 'lucide-react';
 import { formatPrice } from '../../utils/geometryUtils';
 import { bookingService } from '../../services/bookingService';
 
@@ -128,6 +128,84 @@ export default function BookingModal({
               <div>
                 <span className="summary-plot-price">{formatPrice(plot.valuation || plot.price || 2500000)}</span>
               </div>
+            </div>
+
+            {/* Admin Uploaded Plot PDF Document Card */}
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', fontWeight: 700, color: '#001B3A' }}>
+                  <FileText size={16} style={{ color: '#dc2626' }} />
+                  <span>Admin Uploaded Plot PDF Plan</span>
+                </div>
+                <span style={{ fontSize: '0.65rem', background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '10px', fontWeight: 700 }}>
+                  OFFICIAL CADASTRAL
+                </span>
+              </div>
+              <p style={{ fontSize: '0.73rem', color: '#64748b', margin: 0 }}>
+                Review official plot demarcation boundaries and dimensions uploaded by Admin.
+              </p>
+              {plot.documents && plot.documents.length > 0 ? (
+                plot.documents.map((doc, idx) => (
+                  <a
+                    key={doc.id || idx}
+                    href={doc.url && doc.url !== '#' ? doc.url : (plot.pdfUrl || '/GOLDEN_CITY_FINAL_PLAN.pdf')}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justify: 'space-between',
+                      background: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      fontSize: '0.78rem',
+                      color: '#001B3A',
+                      fontWeight: 700,
+                      textDecoration: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                      <FileText size={15} style={{ color: '#dc2626', flexShrink: 0 }} />
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.title || `Plot ${plot.plotNumber} Plan.pdf`}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0284c7', fontSize: '0.72rem' }}>
+                      <Download size={14} />
+                      <span>Download</span>
+                    </div>
+                  </a>
+                ))
+              ) : (
+                <a
+                  href={plot.pdfUrl || '/GOLDEN_CITY_FINAL_PLAN.pdf'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justify: 'space-between',
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    fontSize: '0.78rem',
+                    color: '#001B3A',
+                    fontWeight: 700,
+                    textDecoration: 'none'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FileText size={15} style={{ color: '#dc2626' }} />
+                    <span>{plot.pdfName || `Plot_${plot.plotNumber}_Cadastral_Demarcation.pdf`}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0284c7', fontSize: '0.72rem' }}>
+                    <Download size={14} />
+                    <span>Download PDF</span>
+                  </div>
+                </a>
+              )}
             </div>
 
             {error && (
@@ -274,7 +352,7 @@ export default function BookingModal({
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px 14px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <Lock size={18} style={{ color: '#16a34a', flexShrink: 0 }} />
               <p style={{ fontSize: '0.75rem', color: '#166534', margin: 0, lineHeight: 1.4 }}>
-                Protected by 256-Bit SSL Encryption. Token payment locks plot for 48 hours pending admin verification.
+                Protected by 256-Bit SSL Encryption. Admin Plot PDF attached to reservation agreement.
               </p>
             </div>
 
@@ -337,6 +415,31 @@ export default function BookingModal({
               </div>
             </div>
 
+            <a
+              href={plot.pdfUrl || '/GOLDEN_CITY_FINAL_PLAN.pdf'}
+              target="_blank"
+              rel="noopener noreferrer"
+              download
+              style={{
+                width: '100%',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justify: 'center',
+                gap: '8px',
+                padding: '10px 16px',
+                background: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                color: '#001B3A',
+                fontWeight: 700,
+                borderRadius: '8px',
+                textDecoration: 'none',
+                fontSize: '0.84rem'
+              }}
+            >
+              <Download size={16} style={{ color: '#0284c7' }} />
+              <span>Download Official Plot PDF</span>
+            </a>
+
             <button
               onClick={onClose}
               className="btn-primary-gold-stitch"
@@ -350,4 +453,5 @@ export default function BookingModal({
     </div>
   );
 }
+
 

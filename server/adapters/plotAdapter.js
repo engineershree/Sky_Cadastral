@@ -24,6 +24,17 @@ function normalizeStatus(status) {
 export function normalizePlot(row) {
   const coordinates = parsePolygonGeometry(row.polygon_geometry);
   const edgeDimensions = parsePolygonGeometry(row.edge_dimensions);
+  let documents = row.documents || [];
+  if (typeof documents === 'string') {
+    try {
+      documents = JSON.parse(documents);
+    } catch {
+      documents = [];
+    }
+  }
+
+  const pdfUrl = row.original_pdf_url || row.pdf_url || '/GOLDEN_CITY_FINAL_PLAN.pdf';
+  const pdfName = row.original_pdf_name || row.pdf_name || 'Golden City Plot Demarcation PDF.pdf';
 
   return {
     id: row.id,
@@ -40,6 +51,11 @@ export function normalizePlot(row) {
     description: row.location || `Plot ${row.plot_number}`,
     layoutId: row.layout_id,
     pricePerSqft: Number(row.price_per_sqft) || 0,
+    documents,
+    pdfUrl,
+    pdfName,
+    layoutPdfUrl: pdfUrl,
+    layoutPdfName: pdfName,
   };
 }
 
@@ -47,6 +63,8 @@ export function normalizeLayout(row, projectRow = null) {
   const maxX = Number(row.bounding_width) || 800;
   const maxY = Number(row.bounding_height) || 600;
   const infrastructure = parsePolygonGeometry(row.infrastructure_geometry);
+  const pdfUrl = row.original_pdf_url || '/GOLDEN_CITY_FINAL_PLAN.pdf';
+  const pdfName = row.original_pdf_name || 'Golden City Master Plan.pdf';
 
   return {
     id: row.id,
@@ -64,6 +82,8 @@ export function normalizeLayout(row, projectRow = null) {
     viewCenter: [maxX / 2, maxY / 2],
     bounds: { minX: 0, maxX, minY: 0, maxY },
     status: row.status,
+    pdfUrl,
+    pdfName,
   };
 }
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, CheckCircle2, Lock, Compass, Calendar, Maximize2, Tag, ShieldCheck } from 'lucide-react';
+import { X, CheckCircle2, Lock, Compass, Calendar, Maximize2, Tag, ShieldCheck, FileText, Download } from 'lucide-react';
 import { formatPrice } from '../../utils/geometryUtils';
 import bannerImg from '../../assets/landing2.png';
 
@@ -98,6 +98,81 @@ export default function PlotDetailsModal({
             <CheckCircle2 className="check-icon" size={16} />
             <span>Secure Gated Community</span>
           </div>
+        </div>
+
+        {/* Official Plot Documents & PDF Section */}
+        <div style={{ marginTop: '12px', marginBottom: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', fontWeight: 700, color: '#0f172a' }}>
+              <FileText size={15} style={{ color: '#dc2626' }} />
+              <span>Official Admin Cadastral PDF</span>
+            </div>
+            <span style={{ fontSize: '0.68rem', background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
+              Verified
+            </span>
+          </div>
+
+          <p style={{ fontSize: '0.73rem', color: '#64748b', margin: '0 0 10px 0', lineHeight: 1.35 }}>
+            Verified demarcation plan uploaded by Admin.
+          </p>
+
+          {plot.documents && plot.documents.length > 0 ? (
+            plot.documents.map((doc, idx) => (
+              <a
+                key={doc.id || idx}
+                href={doc.url && doc.url !== '#' ? doc.url : (plot.pdfUrl || '/GOLDEN_CITY_FINAL_PLAN.pdf')}
+                target="_blank"
+                rel="noopener noreferrer"
+                download
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justify: 'space-between',
+                  background: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '8px 10px',
+                  fontSize: '0.78rem',
+                  color: '#0f172a',
+                  textDecoration: 'none',
+                  fontWeight: 600,
+                  marginBottom: '6px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                  <FileText size={16} style={{ color: '#dc2626', flexShrink: 0 }} />
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.title || `Plot ${plot.plotNumber} Document PDF`}</span>
+                </div>
+                <Download size={14} style={{ color: '#0284c7', flexShrink: 0 }} />
+              </a>
+            ))
+          ) : (
+            <a
+              href={plot.pdfUrl || '/GOLDEN_CITY_FINAL_PLAN.pdf'}
+              target="_blank"
+              rel="noopener noreferrer"
+              download
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justify: 'space-between',
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                fontSize: '0.78rem',
+                color: '#0f172a',
+                textDecoration: 'none',
+                fontWeight: 600
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileText size={16} style={{ color: '#dc2626' }} />
+                <span>{plot.pdfName || `Plot_${plot.plotNumber}_Cadastral_Plan.pdf`}</span>
+              </div>
+              <Download size={14} style={{ color: '#0284c7' }} />
+            </a>
+          )}
         </div>
 
         {/* Action Button */}
