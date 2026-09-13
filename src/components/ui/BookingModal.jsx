@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, ShieldCheck, CheckCircle2, Phone, Mail, User, Calendar, Clock, CreditCard, Lock, ArrowRight, FileText, Download } from 'lucide-react';
 import { formatPrice } from '../../utils/geometryUtils';
 import { bookingService } from '../../services/bookingService';
+import { apiClient } from '../../services/apiClient';
 
 export default function BookingModal({
   plot,
@@ -40,42 +41,107 @@ export default function BookingModal({
     setError('');
 
     try {
-      // 1. Call bookingService to save booking to Neon DB & trigger EmailJS notification
-      const bookingResult = await bookingService.createBooking({
+      // 1. Create Razorpay Order via Backend
+      const orderRes = await apiClient.post('/api/payments/create-order', {
+        amount: formData.tokenAmount,
+        currency: 'INR',
         plotId: plot.id,
         plotNumber: plot.plotNumber,
-        fullName: formData.fullName.trim(),
-        phone: formData.phone.trim(),
-        email: formData.email.trim(),
-        appointmentDate: formData.appointmentDate,
-        appointmentTime: formData.appointmentTime,
-        tokenAmount: formData.tokenAmount,
-        paymentMethod: formData.paymentMethod
+        customerName: formData.fullName.trim(),
+        customerEmail: formData.email.trim()
       });
 
-      const txId = `PAY-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+      if (!orderRes || !orderRes.orderId) {
+        throw new Error(orderRes?.error || 'Failed to initialize Razorpay payment order.');
+      }
 
-      setConfirmationData({
-        refNumber: bookingResult.referenceCode || `RES-${Date.now().toString().slice(-6)}`,
-        transactionId: txId,
-        fullName: formData.fullName,
-        phone: formData.phone,
-        email: formData.email,
-        plotNumber: plot.plotNumber,
-        appointmentDate: formData.appointmentDate,
-        appointmentTime: formData.appointmentTime,
-        tokenAmount: formData.tokenAmount,
-        paymentMethod: formData.paymentMethod,
-        bookedAt: new Date().toLocaleString('en-IN')
-      });
+      const razorpayKey = orderRes.keyId || import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TbWRZoSTiNqbet';
 
-      setStep(3);
-      if (onConfirmBooking) {
-        onConfirmBooking(plot.id, bookingResult);
+      // 2. Open Razorpay Checkout Modal
+      const options = {
+        key: razorpayKey,
+        amount: orderRes.amount,
+        currency: orderRes.currency || 'INR',
+        name: 'Sky Cadastral Survey & Plotting',
+        description: `Token Advance for Plot ${plot.plotNumber}`,
+        image: '/src/assets/logo.jpeg',
+        order_id: orderRes.orderId,
+        prefill: {
+          name: formData.fullName.trim(),
+          email: formData.email.trim(),
+          contact: formData.phone.trim()
+        },
+        theme: {
+          color: '#A67C27'
+        },
+        handler: async function (response) {
+          try {
+            setIsSubmitting(true);
+            // 3. Verify Payment Signature on Backend, Save to DB & Alert Admin via Email / Notification
+            const verifyRes = await apiClient.post('/api/payments/verify-payment', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              plotId: plot.id,
+              plotNumber: plot.plotNumber,
+              customerName: formData.fullName.trim(),
+              customerEmail: formData.email.trim(),
+              customerPhone: formData.phone.trim(),
+              visitDate: formData.appointmentDate,
+              visitSlot: formData.appointmentTime,
+              amountPaid: formData.tokenAmount
+            });
+
+            if (!verifyRes.success) {
+              throw new Error(verifyRes.error || 'Razorpay Payment Signature Verification Failed');
+            }
+
+            const bookingData = verifyRes.booking || {};
+
+            setConfirmationData({
+              refNumber: bookingData.bookingId || `RES-${Date.now().toString().slice(-6)}`,
+              transactionId: response.razorpay_payment_id,
+              orderId: response.razorpay_order_id,
+              fullName: formData.fullName,
+              phone: formData.phone,
+              email: formData.email,
+              plotNumber: plot.plotNumber,
+              appointmentDate: formData.appointmentDate,
+              appointmentTime: formData.appointmentTime,
+              tokenAmount: formData.tokenAmount,
+              paymentMethod: 'Razorpay (' + (formData.paymentMethod || 'UPI/Card') + ')',
+              bookedAt: new Date().toLocaleString('en-IN')
+            });
+
+            setStep(3);
+            if (onConfirmBooking) {
+              onConfirmBooking(plot.id, bookingData);
+            }
+          } catch (err) {
+            setError(err.message || 'Payment Verification Error. Please contact support.');
+          } finally {
+            setIsSubmitting(false);
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setIsSubmitting(false);
+          }
+        }
+      };
+
+      if (window.Razorpay) {
+        const rzp = new window.Razorpay(options);
+        rzp.on('payment.failed', function (response) {
+          setError(`Payment Failed: ${response.error?.description || 'Transaction cancelled or failed.'}`);
+          setIsSubmitting(false);
+        });
+        rzp.open();
+      } else {
+        throw new Error('Razorpay SDK failed to load. Please check internet connection.');
       }
     } catch (err) {
-      setError(err.message || 'Failed to complete plot booking appointment. Please try again.');
-    } finally {
+      setError(err.message || 'Failed to initiate Razorpay checkout.');
       setIsSubmitting(false);
     }
   };
