@@ -10,6 +10,7 @@ import Razorpay from 'razorpay';
 import nodemailer from 'nodemailer';
 import { pool, query } from './db.js';
 import { parseCadastralPdf } from './pdf_parser.js';
+import { generatePureCadastralLayout } from './js_cadastral_generator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -403,6 +404,29 @@ app.post('/api/layouts/upload', upload.single('pdfFile'), async (req, res) => {
 // HIGH-ACCURACY CADASTRAL EXTRACTION & VERIFICATION ENDPOINTS
 // ============================================================================
 
+// POST /api/cadastral/generate-js-layout - Pure JavaScript Vector Cadastral Plan Generator
+app.post('/api/cadastral/generate-js-layout', (req, res) => {
+  try {
+    const layout = generatePureCadastralLayout(req.body || {});
+    res.json({
+      success: true,
+      layoutId: layout.layoutId,
+      layoutName: layout.layoutName,
+      projectName: layout.projectName,
+      forensicReport: layout.forensicReport,
+      officialTableMap: layout.officialTableMap,
+      plots: layout.matchedPlots,
+      infrastructureGeometry: layout.infrastructureGeometry,
+      bounds: layout.bounds,
+      viewCenter: layout.viewCenter,
+      unmatchedPolygons: []
+    });
+  } catch (err) {
+    console.error('❌ JS Cadastral Generator Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // POST /api/cadastral/parse-pdf - Geometry-First Vector Cadastral Extraction Pipeline
 app.post('/api/cadastral/parse-pdf', upload.single('pdfFile'), async (req, res) => {
   try {
@@ -412,7 +436,7 @@ app.post('/api/cadastral/parse-pdf', upload.single('pdfFile'), async (req, res) 
     } else if (req.body.pdfPath) {
       pdfInput = req.body.pdfPath;
     } else {
-      pdfInput = './GOLDEN  CITY FINAL PLAN Model.pdf';
+      return res.status(400).json({ success: false, error: 'No PDF file attached. Use /api/cadastral/generate-js-layout for pure JS plan generation.' });
     }
 
     const extractionResult = await parseCadastralPdf(pdfInput);
