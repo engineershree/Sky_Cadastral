@@ -10,9 +10,8 @@ function normalizePlot(p) {
       docs = [];
     }
   }
-  const defaultPdf = '/GOLDEN_CITY_FINAL_PLAN.pdf';
-  const pdfUrl = p.pdfUrl || p.pdf_url || p.originalPdfUrl || p.original_pdf_url || defaultPdf;
-  const pdfName = p.pdfName || p.pdf_name || p.originalPdfName || p.original_pdf_name || 'Golden City Plot Demarcation Plan.pdf';
+  const pdfUrl = p.pdfUrl || p.pdf_url || p.originalPdfUrl || p.original_pdf_url || '';
+  const pdfName = p.pdfName || p.pdf_name || p.originalPdfName || p.original_pdf_name || (pdfUrl ? 'Plot Demarcation Plan' : '');
 
   return {
     ...p,

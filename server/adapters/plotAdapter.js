@@ -33,8 +33,8 @@ export function normalizePlot(row) {
     }
   }
 
-  const pdfUrl = row.original_pdf_url || row.pdf_url || '/GOLDEN_CITY_FINAL_PLAN.pdf';
-  const pdfName = row.original_pdf_name || row.pdf_name || 'Golden City Plot Demarcation PDF.pdf';
+  const pdfUrl = row.original_pdf_url || row.pdf_url || '';
+  const pdfName = row.original_pdf_name || row.pdf_name || (row.original_pdf_url ? 'Plot Demarcation PDF' : '');
 
   return {
     id: row.id,
@@ -63,8 +63,8 @@ export function normalizeLayout(row, projectRow = null) {
   const maxX = Number(row.bounding_width) || 800;
   const maxY = Number(row.bounding_height) || 600;
   const infrastructure = parsePolygonGeometry(row.infrastructure_geometry);
-  const pdfUrl = row.original_pdf_url || '/GOLDEN_CITY_FINAL_PLAN.pdf';
-  const pdfName = row.original_pdf_name || 'Golden City Master Plan.pdf';
+  const pdfUrl = row.original_pdf_url || '';
+  const pdfName = row.original_pdf_name || (row.original_pdf_url ? 'Demarcation Plan' : '');
 
   return {
     id: row.id,
