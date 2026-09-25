@@ -323,70 +323,9 @@ export function AppProvider({ children }) {
         return;
       }
     } catch (err) {
-      console.log('Backend upload API error, running local multi-plot fallback:', err.message);
+      console.error('Backend upload API error:', err.message);
+      showToast(`⚠️ PDF layout extraction error: ${err.message}. Please verify backend extraction engine.`, 'error');
     }
-
-    // 2. Fallback Multi-Plot Generator (30 Plots) if Server is Offline
-    const newLayoutId = `LAYOUT-${Date.now()}`;
-    const fallbackLayout = {
-      id: newLayoutId,
-      projectId: layoutData.projectId || 'AREA-001',
-      projectName: layoutData.projectName || 'Sky Cadastral Phase 1',
-      name: layoutName,
-      status: 'Needs Verification',
-      originalPdfUrl: '/docs/master_cadastral_layout_30plots.pdf',
-      originalPdfName: pdfFileName,
-      fileSize: '3.8 KB',
-      uploadedAt: new Date().toISOString().split('T')[0],
-      scaleFactor: 1.0,
-      boundingWidth: 800,
-      boundingHeight: 600,
-      extractedPlotsCount: 30
-    };
-
-    const fallback30Plots = [];
-    const cols = 5;
-    for (let i = 0; i < 30; i++) {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const startX = 50 + col * 175;
-      const startY = 60 + row * 115;
-      const l = 50 + (i % 3) * 5;
-      const w = 30 + (i % 2) * 5;
-
-      fallback30Plots.push({
-        id: `PLOT-FB-${Date.now()}-${i + 1}`,
-        plotNumber: i < 15 ? `Plot P-1${i < 9 ? '0' + (i + 1) : (i + 1)}` : `Site ${200 + i + 1}`,
-        layoutId: newLayoutId,
-        project: fallbackLayout.projectName,
-        area: l * w,
-        unit: 'sq.ft',
-        length: l,
-        width: w,
-        documentArea: l * w,
-        facing: i % 4 === 0 ? 'North' : i % 4 === 1 ? 'East' : i % 4 === 2 ? 'South' : 'West',
-        facingRoadWidth: 40,
-        polygonGeometry: [
-          [startX, startY],
-          [startX + Math.round(l * 2.2), startY],
-          [startX + Math.round(l * 2.2), startY + Math.round(w * 2.2)],
-          [startX, startY + Math.round(w * 2.2)]
-        ],
-        valuation: l * w * 2200,
-        pricePerSqFt: 2200,
-        status: 'Available',
-        location: `${fallbackLayout.projectName}, Sector ${row + 1}`,
-        verificationStatus: 'Needs Verification',
-        valuationNotes: 'Extracted layout plot from PDF document.'
-      });
-    }
-
-    setLayouts((prev) => [fallbackLayout, ...prev]);
-    setPlots((prev) => [...fallback30Plots, ...prev]);
-    setActiveLayoutId(newLayoutId);
-
-    logActivity('PDF Plot Extraction Completed', 'Layout', `30 Plots Extracted`, 'task_alt', 'layout');
-    showToast(`🎉 Extraction Complete! Extracted 30 structured plots from "${pdfFileName}". Ready for Admin Verification.`);
   };
 
   const newDateStr = () => new Date().toISOString().split('T')[0];

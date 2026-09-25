@@ -35,7 +35,7 @@ import ForensicReportModal from './components/reports/ForensicReportModal';
 import LoginPage from './components/auth/LoginPage';
 
 function MainAppContent() {
-  const { activeModule, setActiveModule, plots, showToast } = useApp();
+  const { activeModule, setActiveModule, plots, layouts, activeLayoutId, showToast } = useApp();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -235,12 +235,13 @@ function MainAppContent() {
 
           {activeModule === 'Cadastral Verification' && (
             <CadastralVerificationCanvas
-              plots={cadastralPlots.length > 0 ? cadastralPlots : plots}
+              plots={cadastralPlots.length > 0 ? cadastralPlots : plots.filter(p => p.layoutId ? p.layoutId === (activeLayoutId || layouts?.[0]?.id || 'LAYOUT-001') : true)}
               unmatchedPolygons={unmatchedPolygons}
               forensicReport={currentForensicReport}
               onSaveVerifiedLayout={handleSaveVerifiedLayout}
               onPublishLayout={handlePublishLayout}
               onOpenReportModal={() => setForensicReportModalOpen(true)}
+              onOpenUploadModal={() => setUploadLayoutModalOpen(true)}
             />
           )}
         </main>

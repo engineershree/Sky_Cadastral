@@ -16,9 +16,10 @@ export default function Map3DView({ onOpenBookingModal }) {
   const mountRef = useRef(null);
 
   const currentLayout = layouts.find((l) => l.id === activeLayoutId) || layouts[0];
-  const layoutPlots = plots.filter((p) => !p.layoutId || p.layoutId === currentLayout?.id);
+  const layoutPlots = plots.filter((p) => p.layoutId ? p.layoutId === currentLayout?.id : currentLayout?.id === layouts[0]?.id);
 
   const [selected3DPlot, setSelected3DPlot] = useState(layoutPlots[0] || plots[0] || null);
+  const [cameraMode, setCameraMode] = useState('perspective'); // 'perspective' | 'orthographic'
 
   const formatCurrency = (val) =>
     `₹${(val || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -55,9 +56,22 @@ export default function Map3DView({ onOpenBookingModal }) {
     scene.background = new THREE.Color(0x001229); // Deep Sky Navy
     scene.fog = new THREE.FogExp2(0x001229, 0.003);
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 1, 2000);
-    camera.position.set(0, maxSpan * 0.22, maxSpan * 0.3);
-    camera.lookAt(0, 0, 0);
+    let camera;
+    if (cameraMode === 'orthographic') {
+      const aspect = width / height;
+      const frustumSize = maxSpan * 0.35;
+      camera = new THREE.OrthographicCamera(
+        (-frustumSize * aspect) / 2, (frustumSize * aspect) / 2,
+        frustumSize / 2, -frustumSize / 2,
+        1, 2000
+      );
+      camera.position.set(0, maxSpan * 0.5, 0);
+      camera.lookAt(0, 0, 0);
+    } else {
+      camera = new THREE.PerspectiveCamera(45, width / height, 1, 2000);
+      camera.position.set(0, maxSpan * 0.22, maxSpan * 0.3);
+      camera.lookAt(0, 0, 0);
+    }
 
     // 2. WebGL Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -220,7 +234,7 @@ export default function Map3DView({ onOpenBookingModal }) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [layoutPlots]);
+  }, [layoutPlots, cameraMode]);
 
   const handleOpenDetails = (plotId) => {
     setSelectedPlotId(plotId);
@@ -242,6 +256,28 @@ export default function Map3DView({ onOpenBookingModal }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center bg-gray-100 p-1 rounded-lg border border-gray-200">
+            <button
+              onClick={() => setCameraMode('perspective')}
+              className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                cameraMode === 'perspective'
+                  ? 'bg-[#001B3A] text-white shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Perspective 3D
+            </button>
+            <button
+              onClick={() => setCameraMode('orthographic')}
+              className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                cameraMode === 'orthographic'
+                  ? 'bg-[#001B3A] text-white shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Orthographic Blueprint
+            </button>
+          </div>
           <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border">
             <span className="text-xs font-bold text-gray-500 px-2">Layout:</span>
             <select

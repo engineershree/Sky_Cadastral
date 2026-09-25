@@ -59,6 +59,7 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
           facing: p.facing || 'East',
           facingRoadWidth: p.facingRoadWidth || 30,
           polygonGeometry: p.polygonGeometry,
+          canonicalGeometry: p.canonicalGeometry,
           pricePerSqFt: 2200 + (idx % 5) * 100,
           valuation: Math.round((p.officialAreaSqft || p.calculatedAreaSqft) * (2200 + (idx % 5) * 100)),
           status: 'Available',
@@ -88,6 +89,7 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
         resolve({
           forensicReport: jsonResult.forensicReport,
           officialTableMap: jsonResult.officialTableMap,
+          geoJsonFeatureCollection: jsonResult.geoJsonFeatureCollection,
           plots: plots,
           extractedPlotsCount: plots.length,
           infrastructureGeometry: jsonResult.infrastructureGeometry || { roads: [], openSpaces: [] },
