@@ -3,10 +3,10 @@ import json
 import os
 import re
 try:
-    import pymupdf
+    import fitz as pymupdf
 except ImportError:
     try:
-        import fitz as pymupdf
+        import pymupdf
     except ImportError as e:
         sys.stderr.write("ERROR: PyMuPDF is not installed. Please install it using 'pip install PyMuPDF'\n")
         sys.exit(1)
