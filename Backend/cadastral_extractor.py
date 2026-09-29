@@ -2,7 +2,14 @@ import sys
 import json
 import os
 import re
-import pymupdf
+try:
+    import pymupdf
+except ImportError:
+    try:
+        import fitz as pymupdf
+    except ImportError as e:
+        sys.stderr.write("ERROR: PyMuPDF is not installed. Please install it using 'pip install PyMuPDF'\n")
+        sys.exit(1)
 import numpy as np
 from shapely.geometry import LineString, Polygon, Point, MultiLineString
 from shapely.ops import polygonize, unary_union, snap

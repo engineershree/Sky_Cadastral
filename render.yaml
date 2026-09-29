@@ -2,7 +2,7 @@ services:
   - type: web
     name: sky-cadastral-admin
     env: node
-    buildCommand: npm install && npm run build
+    buildCommand: pip install -r Backend/requirements.txt && npm install && npm run build
     startCommand: npm start
     envVars:
       - key: PORT

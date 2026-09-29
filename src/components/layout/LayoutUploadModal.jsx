@@ -39,12 +39,21 @@ export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralP
     setIsUploading(true);
     setUploadStep(1);
 
-    const apiBase = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : 'https://sky-cadastral.onrender.com/api');
+    const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://sky-cadastral-adminpanel.onrender.com/api';
+
+    const doFetch = async (endpoint, options) => {
+      try {
+        return await fetch(`${apiBase}${endpoint}`, options);
+      } catch (err) {
+        // Fallback to /api proxy
+        return await fetch(`/api${endpoint}`, options);
+      }
+    };
 
     try {
       if (mode === 'js') {
         setUploadStep(2);
-        const res = await fetch(`${apiBase}/cadastral/generate-js-layout`, {
+        const res = await doFetch('/cadastral/generate-js-layout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -74,7 +83,7 @@ export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralP
         }
       } else { // Mode: PDF
         if (!file) {
-          alert('Please select a PDF file');
+          alert('Please click or drag a layout PDF file to select it before submitting.');
           setIsUploading(false);
           return;
         }
@@ -83,7 +92,7 @@ export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralP
         const formData = new FormData();
         formData.append('pdfFile', file);
 
-        const res = await fetch(`${apiBase}/cadastral/parse-pdf`, {
+        const res = await doFetch('/cadastral/parse-pdf', {
           method: 'POST',
           body: formData
         });
@@ -258,7 +267,7 @@ export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralP
                   <div>
                     <p className="font-bold text-[#001B3A]">{file.name}</p>
                     <p className="text-[11px] text-emerald-700 font-semibold mt-0.5">
-                      {(file.size / (1024 * 1024)).toFixed(2)} MB • Valid Vector/Raster Layout PDF
+                      {file.size > 0 ? (file.size >= 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` : `${(file.size / 1024).toFixed(1)} KB`) : 'PDF File Attached'} • Ready for Vector Cadastral Extraction
                     </p>
                   </div>
                 ) : (

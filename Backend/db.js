@@ -1,15 +1,22 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
 
-dotenv.config();
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const { Pool } = pg;
 
 const connectionString = process.env.DATABASE_URL;
+const useSsl = Boolean(connectionString && (connectionString.includes('sslmode=require') || connectionString.includes('neon.tech') || connectionString.includes('render.com')));
 
 export const pool = new Pool({
   connectionString,
-  ssl: { rejectUnauthorized: false }
+  ssl: useSsl ? { rejectUnauthorized: false } : false
 });
 
 // In-Memory fallback store for layouts and plots when PostgreSQL connection is unavailable

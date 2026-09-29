@@ -25,9 +25,10 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
   }
 
   const scriptPath = path.join(__dirname, 'cadastral_extractor.py');
+  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
 
   return new Promise((resolve, reject) => {
-    execFile('python', [scriptPath, targetPdfPath], { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(pythonCmd, [scriptPath, targetPdfPath], { maxBuffer: 50 * 1024 * 1024, timeout: 40000 }, (error, stdout, stderr) => {
       // Clean up temp file if created
       if (tempFilePath && fs.existsSync(tempFilePath)) {
         try { fs.unlinkSync(tempFilePath); } catch (e) {}

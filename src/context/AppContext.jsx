@@ -123,28 +123,24 @@ export function AppProvider({ children }) {
     isDanger: false,
   });
 
-  // Smart API Base URL with Local & Remote Auto-Discovery
-  const RENDER_API_BASE = 'https://sky-cadastral.onrender.com/api';
-  const LOCAL_API_BASE = 'http://localhost:5000/api';
-  const PRIMARY_API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? LOCAL_API_BASE : RENDER_API_BASE);
+  const LIVE_API_BASE = 'https://sky-cadastral-adminpanel.onrender.com/api';
+  const PRIMARY_API_BASE = import.meta.env.VITE_API_BASE_URL || LIVE_API_BASE;
 
   const safeApiFetch = async (endpoint, options = {}) => {
-    // 1. Try PRIMARY_API_BASE (Local in dev or env override)
+    // 1. Try PRIMARY_API_BASE (Live backend)
     try {
       const res = await fetch(`${PRIMARY_API_BASE}${endpoint}`, options);
       if (res.ok) return res;
     } catch (e) {
-      // Primary backend offline
+      // Live backend offline
     }
 
-    // 2. Try LOCAL_API_BASE if PRIMARY was not LOCAL_API_BASE
-    if (PRIMARY_API_BASE !== LOCAL_API_BASE) {
-      try {
-        const res = await fetch(`${LOCAL_API_BASE}${endpoint}`, options);
-        if (res.ok) return res;
-      } catch (e) {
-        // Local backend offline
-      }
+    // 2. Fallback to /api proxy
+    try {
+      const res = await fetch(`/api${endpoint}`, options);
+      if (res.ok) return res;
+    } catch (e) {
+      // Proxy offline
     }
 
     // 3. Try RENDER_API_BASE if not PRIMARY
