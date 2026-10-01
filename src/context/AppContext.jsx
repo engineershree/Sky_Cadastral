@@ -123,7 +123,8 @@ export function AppProvider({ children }) {
     isDanger: false,
   });
 
-  const LIVE_API_BASE = 'https://sky-cadastral-adminpanel.onrender.com/api';
+  const LIVE_API_BASE = 'https://sky-cadastral.onrender.com/api';
+  const RENDER_API_BASE = LIVE_API_BASE;
   const PRIMARY_API_BASE = import.meta.env.VITE_API_BASE_URL || LIVE_API_BASE;
 
   const safeApiFetch = async (endpoint, options = {}) => {

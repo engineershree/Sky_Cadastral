@@ -8,7 +8,7 @@ export default defineConfig({
     port: 5174,
     proxy: {
       '/api': {
-        target: 'https://sky-cadastral-adminpanel.onrender.com',
+        target: 'https://sky-cadastral.onrender.com',
         changeOrigin: true,
         secure: false,
       }

@@ -72,7 +72,7 @@ function MainAppContent() {
     setForensicReportModalOpen(true);
   };
 
-  const LIVE_API_BASE = 'https://sky-cadastral-adminpanel.onrender.com/api';
+  const LIVE_API_BASE = 'https://sky-cadastral.onrender.com/api';
   const API_BASE = import.meta.env.VITE_API_BASE_URL || LIVE_API_BASE;
 
   const handleSaveVerifiedLayout = async (verifiedPlots) => {
