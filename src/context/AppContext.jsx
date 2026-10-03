@@ -126,6 +126,7 @@ export function AppProvider({ children }) {
   const LIVE_API_BASE = 'https://sky-cadastral.onrender.com/api';
   const RENDER_API_BASE = LIVE_API_BASE;
   const PRIMARY_API_BASE = import.meta.env.VITE_API_BASE_URL || LIVE_API_BASE;
+  const API_BASE = PRIMARY_API_BASE;
 
   const safeApiFetch = async (endpoint, options = {}) => {
     // 1. Try PRIMARY_API_BASE (Live backend)

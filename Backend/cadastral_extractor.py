@@ -2,6 +2,9 @@ import sys
 import json
 import os
 import re
+import warnings
+warnings.filterwarnings("ignore")
+
 try:
     import fitz as pymupdf
 except ImportError:
@@ -128,6 +131,7 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
         page_rect = page.rect
         page_width = float(page_rect.width)
         page_height = float(page_rect.height)
+        page_y_offset = page_idx * (page_height + 50.0)
 
         blocks = page.get_text("dict")["blocks"]
         for b in blocks:
@@ -136,15 +140,17 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
                     for s in l["spans"]:
                         txt = s["text"].strip()
                         if txt:
+                            y0_off = s["bbox"][1] + page_y_offset
+                            y1_off = s["bbox"][3] + page_y_offset
                             all_spans.append({
                                 "text": txt,
-                                "bbox": s["bbox"],
+                                "bbox": (s["bbox"][0], y0_off, s["bbox"][2], y1_off),
                                 "x0": s["bbox"][0],
-                                "y0": s["bbox"][1],
+                                "y0": y0_off,
                                 "x1": s["bbox"][2],
-                                "y1": s["bbox"][3],
+                                "y1": y1_off,
                                 "cx": (s["bbox"][0] + s["bbox"][2]) / 2.0,
-                                "cy": (s["bbox"][1] + s["bbox"][3]) / 2.0,
+                                "cy": (y0_off + y1_off) / 2.0,
                                 "size": s["size"],
                                 "font": s["font"],
                                 "page_idx": page_idx
@@ -171,13 +177,13 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
                 cmd = item[0]
                 if cmd == 'l':
                     p1, p2 = item[1], item[2]
-                    x1, y1 = round(p1.x, 2), round(p1.y, 2)
-                    x2, y2 = round(p2.x, 2), round(p2.y, 2)
+                    x1, y1 = round(p1.x, 2), round(p1.y + page_y_offset, 2)
+                    x2, y2 = round(p2.x, 2), round(p2.y + page_y_offset, 2)
                     if ((x2-x1)**2 + (y2-y1)**2)**0.5 >= 0.8:
                         structural_lines.append(LineString([(x1, y1), (x2, y2)]))
                 elif cmd == 're':
                     r_box = item[1]
-                    x0, y0, x1, y1 = round(r_box[0], 2), round(r_box[1], 2), round(r_box[2], 2), round(r_box[3], 2)
+                    x0, y0, x1, y1 = round(r_box[0], 2), round(r_box[1] + page_y_offset, 2), round(r_box[2], 2), round(r_box[3] + page_y_offset, 2)
                     if abs(x1 - x0) > page_width * 0.9 or abs(y1 - y0) > page_height * 0.9:
                         continue
                     pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
@@ -191,7 +197,7 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
                     curve_pts = []
                     for t_val in np.linspace(0.0, 1.0, 7):
                         bx = (1-t_val)**3 * p1.x + 3*(1-t_val)**2 * t_val * p2.x + 3*(1-t_val) * t_val**2 * p3.x + t_val**3 * p4.x
-                        by = (1-t_val)**3 * p1.y + 3*(1-t_val)**2 * t_val * p2.y + 3*(1-t_val) * t_val**2 * p3.y + t_val**3 * p4.y
+                        by = (1-t_val)**3 * (p1.y + page_y_offset) + 3*(1-t_val)**2 * t_val * (p2.y + page_y_offset) + 3*(1-t_val) * t_val**2 * (p3.y + page_y_offset) + t_val**3 * (p4.y + page_y_offset)
                         curve_pts.append((round(bx, 2), round(by, 2)))
                     for i in range(len(curve_pts) - 1):
                         pa, pb = curve_pts[i], curve_pts[i+1]
@@ -269,14 +275,16 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
         txt = s["text"].strip()
         if is_inside_table(s["cx"], s["cy"]):
             continue
-        if re.search(r'\d+\.\d+', txt):
+        if re.search(r'^\d+\.\d{2,}$', txt):
             continue
-        if re.match(r'^(?:PLOT|P)?\s*[-#]?\s*([A-Za-z]?\d{1,4}[A-Za-z]?)$', txt, re.IGNORECASE) and s["size"] >= 1.0:
-            m = re.search(r'([A-Za-z]?\d{1,4}[A-Za-z]?)', txt, re.IGNORECASE)
+        if re.search(r'(?:PLOT|SITE|NO|LOT|SECTOR|P)?[\s\.#-]*([A-Za-z]?\s*[-#]?\s*\d{1,4}[A-Za-z]?)', txt, re.IGNORECASE) and s["size"] >= 1.0:
+            m = re.search(r'([A-Za-z]?\s*[-#]?\s*\d{1,4}[A-Za-z]?)', txt, re.IGNORECASE)
             if m:
                 raw_pnum = m.group(1).upper()
                 norm_pnum = normalize_pnum(raw_pnum)
-                if norm_pnum != "0" and (not official_table_map or norm_pnum in official_table_map):
+                if norm_pnum != "0":
+                    if norm_pnum.isdigit() and int(norm_pnum) > 300:
+                        continue
                     plot_label_candidates.append({
                         "plot_num": norm_pnum,
                         "raw_text": txt,
@@ -350,18 +358,19 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
                     containing.append((idx, poly))
             if containing:
                 expected_pt_area = official_table_map.get(pnum_str, 200.0) * 10.86
-                small_containing = [c for c in containing if 400 <= c[1].area <= 10000]
-                if small_containing:
-                    small_containing.sort(key=lambda item: abs(item[1].area - expected_pt_area))
-                    best_idx, best_poly = small_containing[0]
-                    used_poly_indices.add(best_idx)
-                    found_plot_ids.add(pnum_str)
-                    official_sqm = official_table_map.get(pnum_str, 0.0)
-                    if official_sqm > 0:
-                        raw_ratios.append(best_poly.area / official_sqm)
-                    temp_matches.append((pnum_str, cand, best_poly, best_idx))
-                    containing_found = True
-                    break
+                small_containing = [c for c in containing if 50 <= c[1].area <= 250000]
+                if not small_containing:
+                    small_containing = containing
+                small_containing.sort(key=lambda item: abs(item[1].area - expected_pt_area))
+                best_idx, best_poly = small_containing[0]
+                used_poly_indices.add(best_idx)
+                found_plot_ids.add(pnum_str)
+                official_sqm = official_table_map.get(pnum_str, 0.0)
+                if official_sqm > 0:
+                    raw_ratios.append(best_poly.area / official_sqm)
+                temp_matches.append((pnum_str, cand, best_poly, best_idx))
+                containing_found = True
+                break
 
     # Phase B: Nearest Polygon Fallback
     for pnum_str in sorted_pnums:
@@ -377,7 +386,7 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
             for idx, poly in enumerate(all_polys):
                 if idx in used_poly_indices:
                     continue
-                if not (50 <= poly.area <= 5000):
+                if not (20 <= poly.area <= 250000):
                     continue
                 dist = poly.distance(pt)
                 if dist < min_dist and dist < 120.0:
@@ -459,9 +468,21 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
 
         status = "VERIFIED" if (diff_sqm <= 150.0 or (official_sqm > 0 and diff_sqm / official_sqm <= 1.0)) else "GEOMETRY_MISMATCH"
 
+        raw_label_upper = lbl["raw_text"].upper()
+        if "OPEN SPACE" in raw_label_upper or "PARK" in raw_label_upper or "AMENITY" in raw_label_upper or "GREEN" in raw_label_upper:
+            entity_type = "OPEN_SPACE"
+            final_pnum_str = lbl["raw_text"]
+        elif calc_sqm > 30000.0 or poly.area > (page_width * page_height * 0.4):
+            entity_type = "SITE_BOUNDARY"
+            final_pnum_str = "SITE_BOUNDARY"
+        else:
+            entity_type = "PLOT"
+            final_pnum_str = str(pnum_str)
+
         matched_plots.append({
-            "plotId": f"Plot-{pnum_str}",
-            "plotNumber": str(pnum_str),
+            "plotId": f"Entity-{final_pnum_str}",
+            "plotNumber": final_pnum_str,
+            "entityType": entity_type,
             "rawLabel": lbl["raw_text"],
             "polygonGeometry": source_coords,
             "canonicalGeometry": canonical_coords,
@@ -493,13 +514,13 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
             bh = bounds[3] - bounds[1]
             aspect = max(bw, bh) / (min(bw, bh) + 0.001)
 
-            if poly.area > 1500 and aspect > 2.5:
+            if poly.area > 5000 and aspect > 3.0:
                 infrastructure_roads.append({
                     "id": f"road-extracted-{idx+1}",
                     "name": f"Extracted Layout Road {len(infrastructure_roads)+1}",
                     "coordinates": coords
                 })
-            elif poly.area > 2000:
+            elif poly.area > 50000:
                 infrastructure_open_spaces.append({
                     "id": f"green-extracted-{idx+1}",
                     "name": f"Extracted Open Space {len(infrastructure_open_spaces)+1}",
@@ -606,7 +627,8 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
                     "coordinates": [p["canonicalGeometry"]]
                 },
                 "properties": {
-                    "entity_type": "PLOT",
+                    "entity_type": p.get("entityType", "PLOT"),
+                    "entityType": p.get("entityType", "PLOT"),
                     "plotNumber": p["plotNumber"],
                     "areaSqm": p["officialAreaSqm"],
                     "areaSqft": p["officialAreaSqft"],

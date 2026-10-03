@@ -40,12 +40,16 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
       }
 
       try {
-        const jsonResult = JSON.parse(stdout);
+        const jsonStart = stdout.indexOf('{');
+        const jsonEnd = stdout.lastIndexOf('}');
+        const cleanStdout = (jsonStart !== -1 && jsonEnd > jsonStart) ? stdout.substring(jsonStart, jsonEnd + 1) : stdout;
+        const jsonResult = JSON.parse(cleanStdout);
         
         // Map Python result to backend schema plots format
         const plots = (jsonResult.matchedPlots || []).map((p, idx) => ({
           plotId: p.plotId,
           plotNumber: p.plotNumber,
+          entityType: p.entityType || (p.plotNumber?.startsWith('OPEN SPACE') ? 'OPEN_SPACE' : (p.plotNumber === 'SITE_BOUNDARY' ? 'SITE_BOUNDARY' : 'PLOT')),
           area: p.officialAreaSqft || p.calculatedAreaSqft,
           documentArea: p.officialAreaSqft,
           calculatedAreaSqft: p.calculatedAreaSqft,
@@ -63,7 +67,7 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
           canonicalGeometry: p.canonicalGeometry,
           pricePerSqFt: 2200 + (idx % 5) * 100,
           valuation: Math.round((p.officialAreaSqft || p.calculatedAreaSqft) * (2200 + (idx % 5) * 100)),
-          status: 'Available',
+          status: p.entityType === 'PLOT' ? 'Available' : 'Reserved',
           verificationStatus: p.verificationStatus,
           valuationNotes: p.verificationStatus === 'VERIFIED'
             ? 'Verified cadastral vector geometry matched against official table area.'
