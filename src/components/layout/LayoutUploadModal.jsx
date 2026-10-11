@@ -91,6 +91,12 @@ export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralP
         setUploadStep(2);
         const formData = new FormData();
         formData.append('pdfFile', file);
+        if (layoutName) formData.append('layoutName', layoutName);
+        if (selectedProjectId) {
+          formData.append('projectId', selectedProjectId);
+          const foundArea = areas?.find(a => a.id === selectedProjectId);
+          if (foundArea?.name) formData.append('projectName', foundArea.name);
+        }
 
         const res = await doFetch('/cadastral/parse-pdf', {
           method: 'POST',

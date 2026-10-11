@@ -57,6 +57,15 @@ function arrangeCleanNonOverlappingGrid(inputPlots = []) {
 }
 
 /**
+ * Converts either [x, y] tuple or {x, y} coordinate object into guaranteed [x, y] number tuple
+ */
+function toPointTuple(pt) {
+  if (Array.isArray(pt)) return [Number(pt[0]) || 0, Number(pt[1]) || 0];
+  if (pt && typeof pt === 'object') return [Number(pt.x) || 0, Number(pt.y) || 0];
+  return [0, 0];
+}
+
+/**
  * Checks whether plot geometries in an array have bounding box collisions/overlaps
  */
 function countPlotOverlaps(plotsArr = []) {
@@ -66,16 +75,16 @@ function countPlotOverlaps(plotsArr = []) {
   for (let i = 0; i < plotsArr.length; i++) {
     const g1 = plotsArr[i].polygonGeometry;
     if (!g1 || !Array.isArray(g1) || g1.length < 3) continue;
-    const xs1 = g1.map(pt => pt[0]);
-    const ys1 = g1.map(pt => pt[1]);
+    const xs1 = g1.map(pt => toPointTuple(pt)[0]);
+    const ys1 = g1.map(pt => toPointTuple(pt)[1]);
     const minX1 = Math.min(...xs1), maxX1 = Math.max(...xs1);
     const minY1 = Math.min(...ys1), maxY1 = Math.max(...ys1);
 
     for (let j = i + 1; j < plotsArr.length; j++) {
       const g2 = plotsArr[j].polygonGeometry;
       if (!g2 || !Array.isArray(g2) || g2.length < 3) continue;
-      const xs2 = g2.map(pt => pt[0]);
-      const ys2 = g2.map(pt => pt[1]);
+      const xs2 = g2.map(pt => toPointTuple(pt)[0]);
+      const ys2 = g2.map(pt => toPointTuple(pt)[1]);
       const minX2 = Math.min(...xs2), maxX2 = Math.max(...xs2);
       const minY2 = Math.min(...ys2), maxY2 = Math.max(...ys2);
 
@@ -132,11 +141,16 @@ export default function CadastralVerificationCanvas({
       return;
     }
 
-    // Preserve exact polygonGeometry as extracted from PDF
-    const cleaned = plots.map((p, idx) => ({
-      ...p,
-      plotNumber: cleanPlotName(p.plotNumber || p.id || String(idx + 1))
-    }));
+    // Preserve exact polygonGeometry as extracted from PDF, normalizing to [x, y] tuples
+    const cleaned = plots.map((p, idx) => {
+      let rawG = p.polygonGeometry || p.rawCoordinates || [];
+      const geom = Array.isArray(rawG) ? rawG.map(toPointTuple) : [];
+      return {
+        ...p,
+        polygonGeometry: geom,
+        plotNumber: cleanPlotName(p.plotNumber || p.id || String(idx + 1))
+      };
+    });
 
     setPlotList(cleaned);
     if (cleaned.length > 0) {
@@ -326,7 +340,8 @@ export default function CadastralVerificationCanvas({
     }
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     plotsWithGeometry.forEach((p) => {
-      p.polygonGeometry.forEach(([x, y]) => {
+      p.polygonGeometry.forEach((pt) => {
+        const [x, y] = toPointTuple(pt);
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -554,17 +569,24 @@ export default function CadastralVerificationCanvas({
               />
 
               {/* Render Unmatched Polygons */}
-              {unmatchedPolygons.map((poly, idx) => (
-                <polygon
-                  key={`unmatched-${idx}`}
-                  points={poly.polygonGeometry.map(([x, y]) => `${x},${y}`).join(' ')}
-                  fill="#334155"
-                  fillOpacity="0.15"
-                  stroke="#475569"
-                  strokeWidth="1"
-                  strokeDasharray="4 2"
-                />
-              ))}
+              {unmatchedPolygons.map((poly, idx) => {
+                const polyGeom = Array.isArray(poly.polygonGeometry) ? poly.polygonGeometry : [];
+                const polyPoints = polyGeom.map((pt) => {
+                  const [x, y] = toPointTuple(pt);
+                  return `${x},${y}`;
+                }).join(' ');
+                return (
+                  <polygon
+                    key={`unmatched-${idx}`}
+                    points={polyPoints}
+                    fill="#334155"
+                    fillOpacity="0.15"
+                    stroke="#475569"
+                    strokeWidth="1"
+                    strokeDasharray="4 2"
+                  />
+                );
+              })}
 
               {/* Render Actual Extracted Vector Plot Polygons */}
               {filteredPlots.map((p, idx) => {
@@ -572,15 +594,24 @@ export default function CadastralVerificationCanvas({
                 const isVerified = p.verificationStatus === 'VERIFIED';
                 const hasGeometry = Array.isArray(p.polygonGeometry) && p.polygonGeometry.length >= 3;
                 
-                const pointsStr = hasGeometry ? p.polygonGeometry.map(([x, y]) => `${x},${y}`).join(' ') : '';
+                const pointsStr = hasGeometry ? p.polygonGeometry.map((pt) => {
+                  const [x, y] = toPointTuple(pt);
+                  return `${x},${y}`;
+                }).join(' ') : '';
                 
                 let cx = 0, cy = 0;
                 if (hasGeometry) {
-                  p.polygonGeometry.forEach(([x, y]) => { cx += x; cy += y; });
+                  p.polygonGeometry.forEach((pt) => {
+                    const [x, y] = toPointTuple(pt);
+                    cx += x;
+                    cy += y;
+                  });
                   cx /= p.polygonGeometry.length;
                   cy /= p.polygonGeometry.length;
                 } else if (p.labelCenter) {
-                  [cx, cy] = p.labelCenter;
+                  const [lcX, lcY] = toPointTuple(p.labelCenter);
+                  cx = lcX;
+                  cy = lcY;
                 }
 
                 const displayNum = cleanPlotName(p.plotNumber || p.id || String(idx + 1));

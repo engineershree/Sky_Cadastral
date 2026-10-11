@@ -25,24 +25,30 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
   }
 
   const scriptPath = path.join(__dirname, 'cadastral_extractor.py');
-  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+  const pythonCandidates = process.platform === 'win32' ? ['python', 'python3', 'py'] : ['python3', 'python'];
 
   return new Promise((resolve, reject) => {
-    execFile(pythonCmd, [scriptPath, targetPdfPath], { maxBuffer: 50 * 1024 * 1024, timeout: 40000 }, (error, stdout, stderr) => {
-      // Clean up temp file if created
-      if (tempFilePath && fs.existsSync(tempFilePath)) {
-        try { fs.unlinkSync(tempFilePath); } catch (e) {}
-      }
+    const runExtractor = (candidateIndex) => {
+      const pythonCmd = pythonCandidates[candidateIndex];
+      execFile(pythonCmd, [scriptPath, targetPdfPath], { maxBuffer: 50 * 1024 * 1024, timeout: 40000 }, (error, stdout, stderr) => {
+        if (error && candidateIndex + 1 < pythonCandidates.length) {
+          return runExtractor(candidateIndex + 1);
+        }
 
-      if (error) {
-        console.error('❌ Python Cadastral Extractor Error:', stderr || error.message);
-        return reject(new Error(`Cadastral Extraction Failed: ${stderr || error.message}`));
-      }
+        // Clean up temp file if created
+        if (tempFilePath && fs.existsSync(tempFilePath)) {
+          try { fs.unlinkSync(tempFilePath); } catch (e) {}
+        }
 
-      try {
-        const jsonStart = stdout.indexOf('{');
-        const jsonEnd = stdout.lastIndexOf('}');
-        const cleanStdout = (jsonStart !== -1 && jsonEnd > jsonStart) ? stdout.substring(jsonStart, jsonEnd + 1) : stdout;
+        if (error) {
+          console.error('❌ Python Cadastral Extractor Error:', stderr || error.message);
+          return reject(new Error(`Cadastral Extraction Failed: ${stderr || error.message}`));
+        }
+
+        try {
+          const jsonStart = stdout.indexOf('{');
+          const jsonEnd = stdout.lastIndexOf('}');
+          const cleanStdout = (jsonStart !== -1 && jsonEnd > jsonStart) ? stdout.substring(jsonStart, jsonEnd + 1) : stdout;
         const jsonResult = JSON.parse(cleanStdout);
         
         // Map Python result to backend schema plots format
@@ -116,6 +122,9 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
         reject(new Error(`Failed to parse Cadastral Extractor stdout JSON: ${parseErr.message}`));
       }
     });
+    };
+
+    runExtractor(0);
   });
 }
 
