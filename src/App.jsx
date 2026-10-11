@@ -44,6 +44,12 @@ function MainAppContent() {
   const [unmatchedPolygons, setUnmatchedPolygons] = useState([]);
   const [currentForensicReport, setCurrentForensicReport] = useState(null);
   const [forensicReportModalOpen, setForensicReportModalOpen] = useState(false);
+  const [activeCadastralMeta, setActiveCadastralMeta] = useState({
+    layoutId: 'LAYOUT-001',
+    projectId: 'AREA-001',
+    projectName: 'Cadastral Plan',
+    name: 'Sanctioned Cadastral Plan'
+  });
 
   // Modals visibility state
   const [uploadLayoutModalOpen, setUploadLayoutModalOpen] = useState(false);
@@ -67,6 +73,14 @@ function MainAppContent() {
     setCadastralPlots(data.plots || []);
     setUnmatchedPolygons(data.unmatchedPolygons || []);
     setCurrentForensicReport(data.forensicReport || null);
+    if (data.layoutName || data.projectName || data.layoutId || data.projectId) {
+      setActiveCadastralMeta(prev => ({
+        layoutId: data.layoutId || prev.layoutId || `LAYOUT-${Date.now()}`,
+        projectId: data.projectId || prev.projectId || 'AREA-001',
+        projectName: data.projectName || prev.projectName,
+        name: data.layoutName || data.name || prev.name
+      }));
+    }
     setUploadLayoutModalOpen(false);
     if (setActiveModule) setActiveModule('Cadastral Verification');
     setForensicReportModalOpen(true);
@@ -81,10 +95,10 @@ function MainAppContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          layoutId: 'LAYOUT-GOLDEN-001',
-          projectId: 'AREA-001',
-          projectName: 'Golden City Vita Layout',
-          name: 'Golden City Final Sanctioned Plan',
+          layoutId: activeCadastralMeta.layoutId,
+          projectId: activeCadastralMeta.projectId,
+          projectName: activeCadastralMeta.projectName,
+          name: activeCadastralMeta.name,
           plots: verifiedPlots,
           forensicReport: currentForensicReport
         })
@@ -106,7 +120,7 @@ function MainAppContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          layoutId: 'LAYOUT-GOLDEN-001',
+          layoutId: activeCadastralMeta.layoutId,
           forensicReport: currentForensicReport
         })
       });

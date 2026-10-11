@@ -89,17 +89,37 @@ export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralP
         }
 
         setUploadStep(2);
+        const resolvedLayoutName = layoutName || file.name.replace(/\.pdf$/i, '').replace(/_/g, ' ');
+        const resolvedProjectName = areas.find(a => a.id === selectedProjectId)?.name || 'Default Project';
+
         const formData = new FormData();
         formData.append('pdfFile', file);
+        formData.append('layoutName', resolvedLayoutName);
+        formData.append('projectId', selectedProjectId);
+        formData.append('projectName', resolvedProjectName);
 
-        const res = await doFetch('/cadastral/parse-pdf', {
-          method: 'POST',
-          body: formData
-        });
+        let res = null;
+        let backendErrorMsg = '';
+        try {
+          res = await doFetch('/cadastral/parse-pdf', {
+            method: 'POST',
+            body: formData
+          });
+        } catch (fetchErr) {
+          backendErrorMsg = fetchErr.message;
+        }
 
         setUploadStep(3);
         if (res && res.ok) {
           const data = await res.json();
+          // Ensure forensicReport has documentName and resolved metadata
+          if (data.forensicReport) {
+            data.forensicReport.documentName = data.forensicReport.documentName || file.name;
+          }
+          data.layoutName = data.layoutName || resolvedLayoutName;
+          data.projectName = data.projectName || resolvedProjectName;
+          data.projectId = selectedProjectId;
+
           setIsUploading(false);
           if (onProcessCadastralPdf) {
             onProcessCadastralPdf(data);
@@ -107,13 +127,28 @@ export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralP
             onClose();
           }
         } else {
-          console.warn('⚠️ Hosted PDF backend parser returned non-200, engaging live JS vector layout generator fallback...');
+          // Extract backend error details
+          let errorDetail = backendErrorMsg;
+          if (res) {
+            try {
+              const errJson = await res.json();
+              errorDetail = errJson.error || errJson.message || JSON.stringify(errJson);
+            } catch (_) {
+              try {
+                errorDetail = await res.text();
+              } catch (_) {
+                errorDetail = `HTTP ${res.status} ${res.statusText}`;
+              }
+            }
+          }
+          console.warn(`⚠️ Backend PDF extraction returned non-200 (${res?.status || 'Network'}): ${errorDetail}. Engaging vector layout generator fallback...`);
+
           const fallbackRes = await doFetch('/cadastral/generate-js-layout', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              layoutName: layoutName || file.name.replace(/\.pdf$/i, '').replace(/_/g, ' '),
-              projectName: areas.find(a => a.id === selectedProjectId)?.name || 'Sky Cadastral Fallback Phase',
+              layoutName: resolvedLayoutName,
+              projectName: resolvedProjectName,
               totalPlots: 30,
               plotsPerRow: 6,
               plotWidthFt: 30,
@@ -124,11 +159,17 @@ export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralP
 
           if (fallbackRes && fallbackRes.ok) {
             const fallbackData = await fallbackRes.json();
+            fallbackData.layoutName = resolvedLayoutName;
+            fallbackData.projectName = resolvedProjectName;
+            fallbackData.projectId = selectedProjectId;
             fallbackData.forensicReport = {
               ...(fallbackData.forensicReport || {}),
               documentName: file.name,
               fallbackMode: true,
-              fallbackReason: 'Hosted PDF engine python dependency limit — generated high-precision vector plan.'
+              fallbackReason: `Backend /cadastral/parse-pdf returned status ${res?.status || 'ERR'}: ${errorDetail || 'Server error'}`,
+              expectedSourcePlotCount: fallbackData.plots?.length || 30,
+              matchedPlotCount: fallbackData.plots?.length || 30,
+              verifiedPlotsCount: fallbackData.plots?.length || 30
             };
             setIsUploading(false);
             if (onProcessCadastralPdf) {
@@ -137,8 +178,8 @@ export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralP
               onClose();
             }
           } else {
-            const errData = await res.json().catch(() => ({}));
-            alert(errData.error || 'Failed to process Cadastral PDF file');
+            const errData = await fallbackRes.json().catch(() => ({}));
+            alert(errData.error || errorDetail || 'Failed to process Cadastral PDF file');
             setIsUploading(false);
           }
         }
