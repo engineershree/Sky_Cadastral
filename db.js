@@ -19,6 +19,9 @@ export const pool = new Pool({
   ssl: useSsl ? { rejectUnauthorized: false } : false
 });
 
+// Ensure edge_dimensions column exists in plots table
+pool.query("ALTER TABLE plots ADD COLUMN IF NOT EXISTS edge_dimensions JSONB DEFAULT '[]'::jsonb").catch(() => {});
+
 // In-Memory fallback store for projects, layouts and plots when PostgreSQL connection is unavailable
 const memoryStore = {
   projects: new Map(),
@@ -78,14 +81,24 @@ function handleMemoryQuery(text, params) {
 
   // 2. INSERT INTO layouts
   if (sql.startsWith('INSERT INTO layouts')) {
+    let status = 'Published';
+    let extracted_plots_count = params[4];
+    let infrastructure_geometry = params[5];
+
+    if (params.length >= 7) {
+      status = params[4] || 'Needs Verification';
+      extracted_plots_count = params[5];
+      infrastructure_geometry = params[6];
+    }
+
     const layout = {
       id: params[0],
       project_id: params[1],
       project_name: params[2],
       name: params[3],
-      status: 'Published',
-      extracted_plots_count: params[4],
-      infrastructure_geometry: typeof params[5] === 'string' ? JSON.parse(params[5]) : params[5],
+      status: status,
+      extracted_plots_count: extracted_plots_count,
+      infrastructure_geometry: typeof infrastructure_geometry === 'string' ? JSON.parse(infrastructure_geometry) : infrastructure_geometry,
       uploaded_at: new Date().toISOString()
     };
     memoryStore.layouts.set(layout.id, layout);
@@ -122,7 +135,7 @@ function handleMemoryQuery(text, params) {
       price_per_sqft: params[14],
       status: params[15],
       location: params[16],
-      verification_status: 'Verified',
+      verification_status: params[17] || 'Verified',
       valuation_notes: params[18]
     };
     memoryStore.plots.set(plot.id, plot);

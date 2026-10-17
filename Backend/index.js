@@ -615,46 +615,102 @@ app.post('/api/cadastral/parse-pdf', upload.any(), async (req, res) => {
   }
 });
 
+/**
+ * Ensures vector polygon coordinates form a closed ring (first vertex === last vertex).
+ * Supports both [x, y] tuples and {x, y} coordinate objects.
+ */
+function ensureClosedPolygon(coords) {
+  if (!Array.isArray(coords) || coords.length === 0) return coords;
+  if (Array.isArray(coords[0])) {
+    if (coords.length >= 3) {
+      const first = coords[0];
+      const last = coords[coords.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) {
+        return [...coords, [first[0], first[1]]];
+      }
+    }
+    return coords;
+  }
+  if (coords[0] && typeof coords[0] === 'object' && 'x' in coords[0] && 'y' in coords[0]) {
+    if (coords.length >= 3) {
+      const first = coords[0];
+      const last = coords[coords.length - 1];
+      if (first.x !== last.x || first.y !== last.y) {
+        return [...coords, { x: first.x, y: first.y }];
+      }
+    }
+    return coords;
+  }
+  return coords;
+}
+
 // POST /api/cadastral/save-verified-layout - Save Verified Plots & Layout to Database
 app.post('/api/cadastral/save-verified-layout', async (req, res) => {
   try {
     const { layoutId, projectId, projectName, name, plots, infrastructureGeometry, forensicReport } = req.body;
     const targetLayoutId = layoutId || `LAYOUT-${Date.now()}`;
+    
+    // Check if all plots in the payload have been verified
+    const allPlotsVerified = Array.isArray(plots) && plots.length > 0 && plots.every(
+      p => p.verificationStatus === 'Verified' || p.verificationStatus === 'VERIFIED'
+    );
+    const layoutStatus = allPlotsVerified ? 'Verified' : 'Needs Verification';
+
+    let targetProjectId = projectId || 'AREA-001';
+    const checkProj = await query('SELECT id FROM projects WHERE id = $1', [targetProjectId]);
+    if (checkProj.rows.length === 0) {
+      try {
+        await query(
+          `INSERT INTO projects (id, name, owner_name, address, description)
+           VALUES ($1, $2, 'Sky Cadastral Surveyor', 'Cadastral Sector', 'Cadastral Vector Area')
+           ON CONFLICT (id) DO NOTHING`,
+          [targetProjectId, projectName || 'Golden City Vita Layout']
+        );
+      } catch (_) {
+        targetProjectId = null;
+      }
+    }
 
     // 1. Upsert Layout Record
     const layoutRes = await query(
       `INSERT INTO layouts (id, project_id, project_name, name, status, extracted_plots_count, infrastructure_geometry, uploaded_at)
-       VALUES ($1, $2, $3, $4, 'Needs Verification', $5, $6, CURRENT_DATE)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE)
        ON CONFLICT (id) DO UPDATE 
        SET extracted_plots_count = EXCLUDED.extracted_plots_count,
            infrastructure_geometry = EXCLUDED.infrastructure_geometry,
-           status = 'Needs Verification'
+           status = $5
        RETURNING *`,
       [
         targetLayoutId,
-        projectId || 'AREA-001',
+        targetProjectId,
         projectName || 'Golden City Vita Layout',
-        name || 'Golden City Final Plan',
-        plots.length,
+        name || 'Cadastral Plan',
+        layoutStatus,
+        (plots || []).length,
         JSON.stringify(infrastructureGeometry || { roads: [], openSpaces: [] })
       ]
     );
 
-    // 2. Delete existing plots for layout if updating
+    // 2. Clear existing plots for this layout to prevent duplicates
     await query('DELETE FROM plots WHERE layout_id = $1', [targetLayoutId]);
 
-    // 3. Insert Verified Plot Records
+    // 3. Insert each verified plot
     const savedPlots = [];
-    for (const p of plots) {
+    for (const p of (plots || [])) {
       const plotDbId = `PLOT-${targetLayoutId}-${p.plotNumber}`;
       const plotRes = await query(
-        `INSERT INTO plots (id, plot_number, layout_id, project, area, unit, length, width, document_area, facing, facing_road_width, polygon_geometry, edge_dimensions, valuation, price_per_sqft, status, location, verification_status, valuation_notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
+        `INSERT INTO plots (
+           id, plot_number, layout_id, project, area, unit, length, width, 
+           document_area, facing, facing_road_width, polygon_geometry, 
+           edge_dimensions, valuation, price_per_sqft, status, location, 
+           verification_status, valuation_notes
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+         RETURNING *`,
         [
           plotDbId,
           p.plotNumber,
           targetLayoutId,
-          projectName || 'Golden City Vita Layout',
+          projectName || 'Cadastral Layout',
           p.officialAreaSqft || p.area || 1000,
           'sq.ft',
           p.length || 50,
@@ -662,12 +718,12 @@ app.post('/api/cadastral/save-verified-layout', async (req, res) => {
           p.officialAreaSqft || p.documentArea || 1000,
           p.facing || 'North',
           p.facingRoadWidth || 40,
-          JSON.stringify(p.polygonGeometry),
-          JSON.stringify(p.edgeDimensions || []),
+          typeof p.polygonGeometry === 'string' ? p.polygonGeometry : JSON.stringify(p.polygonGeometry || []),
+          typeof p.edgeDimensions === 'string' ? p.edgeDimensions : JSON.stringify(p.edgeDimensions || []),
           p.valuation || 2500000,
           p.pricePerSqFt || 2200,
           p.status || 'Available',
-          'Golden City Vita, Sector 1',
+          'Sector 1',
           p.verificationStatus || 'Verified',
           p.valuationNotes || 'Verified Cadastral Vector Polygon'
         ]
@@ -675,14 +731,44 @@ app.post('/api/cadastral/save-verified-layout', async (req, res) => {
       savedPlots.push(plotRes.rows[0]);
     }
 
+    const verifiedPlotsCount = savedPlots.filter(
+      p => p.verification_status === 'Verified' || p.verification_status === 'VERIFIED'
+    ).length;
+    const isOngoing = !allPlotsVerified;
+
+    const bannerMessage = isOngoing 
+      ? 'Cadastral verification is currently in progress for this area. Official demarcation, boundary survey, and land registry validation are underway. Final layout will be published once fully approved.' 
+      : 'All plot boundary demarcations and legal cadastral records have been officially verified and published.';
+
     res.json({
       success: true,
       layout: layoutRes.rows[0],
       savedPlotsCount: savedPlots.length,
+      verification: {
+        isVerified: allPlotsVerified,
+        verificationOngoing: isOngoing,
+        status: allPlotsVerified ? 'Verified' : 'Verification Ongoing',
+        message: allPlotsVerified 
+          ? 'All cadastral plot geometries verified and synchronized live.' 
+          : 'Cadastral verification is currently in progress for this area. Official demarcation and land registry validation are underway.',
+        totalPlots: savedPlots.length,
+        verifiedPlots: verifiedPlotsCount,
+        unverifiedPlots: savedPlots.length - verifiedPlotsCount
+      },
+      notice: {
+        show: isOngoing,
+        type: isOngoing ? 'warning' : 'success',
+        message: bannerMessage,
+        bannerText: bannerMessage
+      },
+      isVerified: allPlotsVerified,
+      isOngoing,
+      verificationNotice: bannerMessage,
+      noticeBanner: bannerMessage,
       forensicReport
     });
   } catch (err) {
-    console.error('❌ Save Verified Layout Error:', err);
+    console.error('Save Verified Layout Error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -982,7 +1068,7 @@ app.get('/api/client/areas', async (req, res) => {
   }
 });
 
-// 6b. GET /api/client/areas/:areaId - Returns Area Metadata + Bounds + Official PDF Reference
+// 6b. GET /api/client/areas/:areaId - Returns Area Metadata + Bounds + Official PDF Reference + Vector Structure
 app.get('/api/client/areas/:areaId', async (req, res) => {
   try {
     const { areaId } = req.params;
@@ -1003,55 +1089,88 @@ app.get('/api/client/areas/:areaId', async (req, res) => {
         p.address as project_address,
         p.description as project_description,
         (SELECT COUNT(*) FROM plots WHERE layout_id = l.id) as total_plots_count,
-        (SELECT COUNT(*) FROM plots WHERE layout_id = l.id AND (verification_status = 'Verified' OR verification_status IS NULL)) as verified_plots_count
+        (SELECT COUNT(*) FROM plots WHERE layout_id = l.id AND (verification_status = 'Verified' OR verification_status = 'VERIFIED')) as verified_plots_count
       FROM layouts l
       LEFT JOIN projects p ON l.project_id = p.id
-      WHERE l.id = $1 OR l.project_id = $1 OR p.id = $1
+      WHERE l.id = $1 OR l.project_id = $1 OR p.id = $1 OR LOWER(p.name) = LOWER($1) OR LOWER(l.project_name) = LOWER($1) OR LOWER(l.name) = LOWER($1)
       LIMIT 1
     `, [areaId]);
 
-    if (rows.length === 0) {
-      return res.status(404).json({ error: `Area/Layout with ID ${areaId} not found` });
+    let r;
+    if (rows.length > 0) {
+      r = rows[0];
+    } else {
+      // Fallback: Check if areaId matches a project in projects table
+      const projRes = await query(`
+        SELECT * FROM projects
+        WHERE id = $1 OR LOWER(name) = LOWER($1)
+        LIMIT 1
+      `, [areaId]);
+
+      if (projRes.rows.length > 0) {
+        const proj = projRes.rows[0];
+        r = {
+          layout_id: `LAYOUT-${proj.id}`,
+          layout_name: `${proj.name} Cadastral Layout`,
+          layout_status: 'Needs Verification',
+          original_pdf_url: '',
+          original_pdf_name: '',
+          file_size: '',
+          bounding_width: 800,
+          bounding_height: 600,
+          extracted_plots_count: 0,
+          uploaded_at: new Date().toISOString(),
+          project_id: proj.id,
+          project_name: proj.name,
+          project_address: proj.address || '',
+          project_description: proj.description || '',
+          total_plots_count: 0,
+          verified_plots_count: 0
+        };
+      } else {
+        // Fallback if project does not yet have an uploaded PDF layout so it never returns an unhandled 404
+        r = {
+          layout_id: areaId,
+          layout_name: `${areaId} Cadastral Layout`,
+          layout_status: 'Needs Verification',
+          original_pdf_url: '',
+          original_pdf_name: '',
+          file_size: '',
+          bounding_width: 800,
+          bounding_height: 600,
+          extracted_plots_count: 0,
+          uploaded_at: new Date().toISOString(),
+          project_id: areaId,
+          project_name: areaId,
+          project_address: '',
+          project_description: 'Cadastral layout area',
+          total_plots_count: 0,
+          verified_plots_count: 0
+        };
+      }
     }
 
-    const r = rows[0];
-    const area = {
-      id: r.layout_id,
-      layoutId: r.layout_id,
-      projectId: r.project_id || r.layout_id,
-      name: r.project_name || r.layout_name,
-      layoutName: r.layout_name,
-      address: r.project_address || '',
-      description: r.project_description || '',
-      location: r.project_address || '',
-      status: r.layout_status || 'Published',
-      pdfUrl: r.original_pdf_url || '',
-      pdfName: r.original_pdf_name || '',
-      fileSize: r.file_size || '',
-      bounds: {
-        minX: 0,
-        maxX: Number(r.bounding_width || 800),
-        minY: 0,
-        maxY: Number(r.bounding_height || 600)
-      },
-      viewCenter: [Number(r.bounding_width || 800) / 2, Number(r.bounding_height || 600) / 2],
-      totalPlots: Number(r.total_plots_count || 0),
-      verifiedPlotsCount: Number(r.verified_plots_count || 0)
-    };
-
-    // Also fetch plots for this area to return complete layout bundle
+    // Fetch complete vector structure (all plots with closed polygon geometries)
     const plotsQuery = await query(`
       SELECT 
         p.id, p.plot_number, p.layout_id, p.project, p.area, p.unit, p.length, p.width,
-        p.document_area, p.facing, p.facing_road_width, p.polygon_geometry, p.valuation,
-        p.price_per_sqft, p.status, p.location, p.verification_status
+        p.document_area, p.facing, p.facing_road_width, p.polygon_geometry, p.edge_dimensions, p.valuation,
+        p.price_per_sqft, p.status, p.location, p.verification_status, p.valuation_notes
       FROM plots p
-      WHERE (p.layout_id = $1 OR p.project = $1 OR EXISTS (SELECT 1 FROM layouts l WHERE l.id = p.layout_id AND (l.id = $1 OR l.project_id = $1)))
+      WHERE (p.layout_id = $1 OR p.layout_id = $2 OR (p.project IS NOT NULL AND (LOWER(p.project) = LOWER($3) OR LOWER(p.project) = LOWER($1) OR LOWER(p.project) = LOWER($2))))
+         OR EXISTS (
+           SELECT 1 FROM layouts l 
+           WHERE l.id = p.layout_id 
+             AND (l.id = $1 OR l.project_id = $2 OR LOWER(l.project_name) = LOWER($3) OR LOWER(l.name) = LOWER($3))
+         )
       ORDER BY p.plot_number ASC
-    `, [r.layout_id]);
+    `, [r.layout_id, r.project_id || areaId, r.project_name || '']);
 
     const plots = plotsQuery.rows.map((pr) => {
-      const parsedGeom = typeof pr.polygon_geometry === 'string' ? JSON.parse(pr.polygon_geometry) : pr.polygon_geometry;
+      let parsedGeom = typeof pr.polygon_geometry === 'string' ? JSON.parse(pr.polygon_geometry) : pr.polygon_geometry;
+      parsedGeom = ensureClosedPolygon(parsedGeom);
+      let parsedEdges = typeof pr.edge_dimensions === 'string' ? JSON.parse(pr.edge_dimensions) : (pr.edge_dimensions || []);
+
       return {
         id: pr.id,
         plotNumber: pr.plot_number,
@@ -1062,47 +1181,129 @@ app.get('/api/client/areas/:areaId', async (req, res) => {
         area: Number(pr.area || 0),
         unit: pr.unit || 'sq.ft',
         documentArea: Number(pr.document_area || pr.area || 0),
-        facing: pr.facing || 'East',
+        facing: pr.facing || 'North',
         facingRoadWidth: Number(pr.facing_road_width || 30),
         polygonGeometry: parsedGeom,
         coordinates: parsedGeom,
+        edgeDimensions: parsedEdges,
         valuation: Number(pr.valuation || 0),
         pricePerSqFt: Number(pr.price_per_sqft || 0),
         status: pr.status || 'Available',
         location: pr.location || '',
-        verificationStatus: pr.verification_status || 'Verified',
+        verificationStatus: pr.verification_status || 'Needs Verification',
+        valuationNotes: pr.valuation_notes || '',
         isAvailable: pr.status === 'Available'
       };
     });
+
+    const totalPlots = plots.length;
+    const verifiedPlotsCount = plots.filter(
+      (p) => p.verificationStatus === 'Verified' || p.verificationStatus === 'VERIFIED'
+    ).length;
+
+    const allPlotsVerified = totalPlots > 0 && verifiedPlotsCount === totalPlots;
+    const isLayoutVerified = (r.layout_status === 'Verified' || r.layout_status === 'Published');
+    const isVerified = allPlotsVerified && isLayoutVerified;
+    const isOngoing = !isVerified;
+
+    const verificationNoticeMessage = isVerified
+      ? 'All plot boundary demarcations and legal cadastral records have been officially verified and published.'
+      : 'Cadastral verification is currently in progress for this area. Official demarcation, boundary survey, and land registry validation are underway. Final layout will be published once fully approved.';
+
+    const verification = {
+      isVerified,
+      verificationOngoing: isOngoing,
+      status: isVerified ? 'Verified' : 'Verification Ongoing',
+      message: verificationNoticeMessage,
+      totalPlots,
+      verifiedPlots: verifiedPlotsCount,
+      unverifiedPlots: totalPlots - verifiedPlotsCount
+    };
+
+    const notice = {
+      show: isOngoing,
+      type: isOngoing ? 'warning' : 'success',
+      message: verificationNoticeMessage,
+      bannerText: verificationNoticeMessage
+    };
+
+    const area = {
+      id: r.layout_id,
+      layoutId: r.layout_id,
+      projectId: r.project_id || r.layout_id,
+      name: r.project_name || r.layout_name,
+      layoutName: r.layout_name,
+      address: r.project_address || '',
+      description: r.project_description || '',
+      location: r.project_address || '',
+      status: r.layout_status || (isVerified ? 'Verified' : 'Needs Verification'),
+      pdfUrl: r.original_pdf_url || '',
+      pdfName: r.original_pdf_name || '',
+      fileSize: r.file_size || '',
+      bounds: {
+        minX: 0,
+        maxX: Number(r.bounding_width || 800),
+        minY: 0,
+        maxY: Number(r.bounding_height || 600)
+      },
+      viewCenter: [Number(r.bounding_width || 800) / 2, Number(r.bounding_height || 600) / 2],
+      totalPlots,
+      verifiedPlotsCount,
+      isVerified,
+      isOngoing
+    };
 
     res.json({
       success: true,
       area,
       metadata: area, // Alias for client compatibility
       project: { id: area.projectId, name: area.name, address: area.address },
-      plots
+      plots,
+      verification,
+      notice,
+      isVerified,
+      isOngoing,
+      verificationNotice: verificationNoticeMessage,
+      noticeBanner: verificationNoticeMessage
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 6c. GET /api/client/areas/:areaId/plots - Returns Verified/Published Plots for Area
+// 6c. GET /api/client/areas/:areaId/plots - Returns Verified/Published Plots for Area with Closed Polygons
 app.get('/api/client/areas/:areaId/plots', async (req, res) => {
   try {
     const { areaId } = req.params;
+
+    // Retrieve layout status if exists
+    const layoutRes = await query(`
+      SELECT id, status, name, project_name FROM layouts
+      WHERE id = $1 OR project_id = $1 OR LOWER(project_name) = LOWER($1) OR LOWER(name) = LOWER($1)
+      LIMIT 1
+    `, [areaId]);
+    const layoutRow = layoutRes.rows.length > 0 ? layoutRes.rows[0] : null;
+
     const { rows } = await query(`
       SELECT 
         p.id, p.plot_number, p.layout_id, p.project, p.area, p.unit, p.length, p.width,
-        p.document_area, p.facing, p.facing_road_width, p.polygon_geometry, p.valuation,
-        p.price_per_sqft, p.status, p.location, p.verification_status
+        p.document_area, p.facing, p.facing_road_width, p.polygon_geometry, p.edge_dimensions, p.valuation,
+        p.price_per_sqft, p.status, p.location, p.verification_status, p.valuation_notes
       FROM plots p
-      WHERE (p.layout_id = $1 OR p.project = $1 OR EXISTS (SELECT 1 FROM layouts l WHERE l.id = p.layout_id AND (l.id = $1 OR l.project_id = $1)))
+      WHERE (p.layout_id = $1 OR p.project = $1 OR LOWER(p.project) = LOWER($1))
+         OR EXISTS (
+           SELECT 1 FROM layouts l 
+           WHERE l.id = p.layout_id 
+             AND (l.id = $1 OR l.project_id = $1 OR LOWER(l.project_name) = LOWER($1) OR LOWER(l.name) = LOWER($1))
+         )
       ORDER BY p.plot_number ASC
     `, [areaId]);
 
     const clientPlots = rows.map((r) => {
-      const parsedGeom = typeof r.polygon_geometry === 'string' ? JSON.parse(r.polygon_geometry) : r.polygon_geometry;
+      let parsedGeom = typeof r.polygon_geometry === 'string' ? JSON.parse(r.polygon_geometry) : r.polygon_geometry;
+      parsedGeom = ensureClosedPolygon(parsedGeom);
+      let parsedEdges = typeof r.edge_dimensions === 'string' ? JSON.parse(r.edge_dimensions) : (r.edge_dimensions || []);
+
       return {
         id: r.id,
         plotNumber: r.plot_number,
@@ -1117,20 +1318,60 @@ app.get('/api/client/areas/:areaId/plots', async (req, res) => {
         facingRoadWidth: Number(r.facing_road_width || 30),
         polygonGeometry: parsedGeom,
         coordinates: parsedGeom,
+        edgeDimensions: parsedEdges,
         valuation: Number(r.valuation || 0),
         pricePerSqFt: Number(r.price_per_sqft || 0),
         status: r.status || 'Available',
         location: r.location || '',
-        verificationStatus: r.verification_status || 'Verified',
+        verificationStatus: r.verification_status || 'Needs Verification',
+        valuationNotes: r.valuation_notes || '',
         isAvailable: r.status === 'Available'
       };
     });
 
+    const totalPlots = clientPlots.length;
+    const verifiedPlotsCount = clientPlots.filter(
+      (p) => p.verificationStatus === 'Verified' || p.verificationStatus === 'VERIFIED'
+    ).length;
+
+    const allPlotsVerified = totalPlots > 0 && verifiedPlotsCount === totalPlots;
+    const layoutStatus = layoutRow ? layoutRow.status : null;
+    const isLayoutVerified = !layoutRow || layoutStatus === 'Verified' || layoutStatus === 'Published';
+    const isVerified = allPlotsVerified && isLayoutVerified;
+    const isOngoing = !isVerified;
+
+    const verificationNoticeMessage = isVerified
+      ? 'All plot boundary demarcations and legal cadastral records have been officially verified and published.'
+      : 'Cadastral verification is currently in progress for this area. Official demarcation, boundary survey, and land registry validation are underway. Final layout will be published once fully approved.';
+
+    const verification = {
+      isVerified,
+      verificationOngoing: isOngoing,
+      status: isVerified ? 'Verified' : 'Verification Ongoing',
+      message: verificationNoticeMessage,
+      totalPlots,
+      verifiedPlots: verifiedPlotsCount,
+      unverifiedPlots: totalPlots - verifiedPlotsCount
+    };
+
+    const notice = {
+      show: isOngoing,
+      type: isOngoing ? 'warning' : 'success',
+      message: verificationNoticeMessage,
+      bannerText: verificationNoticeMessage
+    };
+
     res.json({
       success: true,
       areaId,
-      totalPlots: clientPlots.length,
-      plots: clientPlots
+      totalPlots,
+      plots: clientPlots,
+      verification,
+      notice,
+      isVerified,
+      isOngoing,
+      verificationNotice: verificationNoticeMessage,
+      noticeBanner: verificationNoticeMessage
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1210,38 +1451,96 @@ app.get('/api/client/published-layouts', async (req, res) => {
 app.get('/api/client/layouts/:layoutId/plots', async (req, res) => {
   try {
     const { layoutId } = req.params;
+
+    // Check layout status
+    const layoutRes = await query(`
+      SELECT id, status, name, project_name FROM layouts
+      WHERE id = $1 OR project_id = $1 OR LOWER(project_name) = LOWER($1) OR LOWER(name) = LOWER($1)
+      LIMIT 1
+    `, [layoutId]);
+    const layoutRow = layoutRes.rows.length > 0 ? layoutRes.rows[0] : null;
+
     const { rows } = await query(
-      'SELECT id, plot_number, layout_id, project, area, unit, length, width, document_area, facing, facing_road_width, polygon_geometry, valuation, price_per_sqft, status, verification_status FROM plots WHERE layout_id = $1 OR project = $1 ORDER BY plot_number ASC',
+      `SELECT id, plot_number, layout_id, project, area, unit, length, width, document_area, facing, facing_road_width, polygon_geometry, edge_dimensions, valuation, price_per_sqft, status, location, verification_status, valuation_notes
+       FROM plots 
+       WHERE layout_id = $1 OR project = $1 OR LOWER(project) = LOWER($1)
+       ORDER BY plot_number ASC`,
       [layoutId]
     );
 
     const clientPlots = rows.map((r) => {
-      const parsedGeom = typeof r.polygon_geometry === 'string' ? JSON.parse(r.polygon_geometry) : r.polygon_geometry;
+      let parsedGeom = typeof r.polygon_geometry === 'string' ? JSON.parse(r.polygon_geometry) : r.polygon_geometry;
+      parsedGeom = ensureClosedPolygon(parsedGeom);
+      let parsedEdges = typeof r.edge_dimensions === 'string' ? JSON.parse(r.edge_dimensions) : (r.edge_dimensions || []);
+
       return {
         id: r.id,
         plotNumber: r.plot_number,
         layoutId: r.layout_id,
         project: r.project,
-        length: Number(r.length),
-        width: Number(r.width),
-        area: Number(r.area),
-        unit: r.unit,
-        facing: r.facing,
-        facingRoadWidth: Number(r.facing_road_width),
+        length: Number(r.length || 0),
+        width: Number(r.width || 0),
+        area: Number(r.area || 0),
+        unit: r.unit || 'sq.ft',
+        documentArea: Number(r.document_area || r.area || 0),
+        facing: r.facing || 'East',
+        facingRoadWidth: Number(r.facing_road_width || 30),
         polygonGeometry: parsedGeom,
         coordinates: parsedGeom,
-        valuation: Number(r.valuation),
-        pricePerSqFt: Number(r.price_per_sqft),
-        status: r.status,
+        edgeDimensions: parsedEdges,
+        valuation: Number(r.valuation || 0),
+        pricePerSqFt: Number(r.price_per_sqft || 0),
+        status: r.status || 'Available',
+        location: r.location || '',
+        verificationStatus: r.verification_status || 'Needs Verification',
+        valuationNotes: r.valuation_notes || '',
         isAvailable: r.status === 'Available'
       };
     });
 
+    const totalPlots = clientPlots.length;
+    const verifiedPlotsCount = clientPlots.filter(
+      (p) => p.verificationStatus === 'Verified' || p.verificationStatus === 'VERIFIED'
+    ).length;
+
+    const allPlotsVerified = totalPlots > 0 && verifiedPlotsCount === totalPlots;
+    const layoutStatus = layoutRow ? layoutRow.status : null;
+    const isLayoutVerified = !layoutRow || layoutStatus === 'Verified' || layoutStatus === 'Published';
+    const isVerified = allPlotsVerified && isLayoutVerified;
+    const isOngoing = !isVerified;
+
+    const verificationNoticeMessage = isVerified
+      ? 'All plot boundary demarcations and legal cadastral records have been officially verified and published.'
+      : 'Cadastral verification is currently in progress for this area. Official demarcation, boundary survey, and land registry validation are underway. Final layout will be published once fully approved.';
+
+    const verification = {
+      isVerified,
+      verificationOngoing: isOngoing,
+      status: isVerified ? 'Verified' : 'Verification Ongoing',
+      message: verificationNoticeMessage,
+      totalPlots,
+      verifiedPlots: verifiedPlotsCount,
+      unverifiedPlots: totalPlots - verifiedPlotsCount
+    };
+
+    const notice = {
+      show: isOngoing,
+      type: isOngoing ? 'warning' : 'success',
+      message: verificationNoticeMessage,
+      bannerText: verificationNoticeMessage
+    };
+
     res.json({
       success: true,
       layoutId,
-      totalPlots: clientPlots.length,
-      plots: clientPlots
+      totalPlots,
+      plots: clientPlots,
+      verification,
+      notice,
+      isVerified,
+      isOngoing,
+      verificationNotice: verificationNoticeMessage,
+      noticeBanner: verificationNoticeMessage
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1873,6 +2172,7 @@ app.get('/api/audit-logs', async (req, res) => {
 app.post('/api/plots', async (req, res) => {
   try {
     const {
+      id = `PLOT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       plotNumber, layoutId, project, area, unit, length, width, documentArea,
       facing, facingRoadWidth, valuation, pricePerSqFt, status, location,
       valuationNotes
@@ -1892,6 +2192,8 @@ app.post('/api/plots', async (req, res) => {
       [startX, startY + pLength]
     ];
 
+    const finalGeom = ensureClosedPolygon(req.body.polygonGeometry || defaultPolygon);
+
     const { rows } = await query(
       `INSERT INTO plots (id, plot_number, layout_id, project, area, unit, length, width, document_area, facing, facing_road_width, polygon_geometry, valuation, price_per_sqft, status, location, verification_status, valuation_notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
@@ -1899,7 +2201,7 @@ app.post('/api/plots', async (req, res) => {
         id, plotNumber, layoutId || 'LAYOUT-001', project || 'Sky Cadastral Phase 1',
         Number(area) || (length * width) || 1200, unit || 'sq.ft', Number(length) || 40, Number(width) || 30,
         Number(documentArea) || (length * width) || 1200, facing || 'North', Number(facingRoadWidth) || 40,
-        JSON.stringify(req.body.polygonGeometry || defaultPolygon), Number(valuation) || 2400000,
+        JSON.stringify(finalGeom), Number(valuation) || 2400000,
         Number(pricePerSqFt) || 2000, status || 'Available', location || 'Sector 1',
         (documentArea && documentArea !== (length * width)) ? 'Mismatch' : 'Verified',
         valuationNotes || 'Added manually via Admin Control Panel'
