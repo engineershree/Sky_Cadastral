@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { normalizePolygonGeometry, parsePoint, computeBoundingBox, calculateCentroid } from '../../utils/geometryUtils';
 
 /**
  * Senior Land Surveyor Helper: Formats clean Plot Number Labels without duplicate "Plot Plot"
@@ -64,16 +65,16 @@ function countPlotOverlaps(plotsArr = []) {
   let overlapCount = 0;
 
   for (let i = 0; i < plotsArr.length; i++) {
-    const g1 = plotsArr[i].polygonGeometry;
-    if (!g1 || !Array.isArray(g1) || g1.length < 3) continue;
+    const g1 = normalizePolygonGeometry(plotsArr[i].polygonGeometry || plotsArr[i].coordinates);
+    if (!g1 || g1.length < 3) continue;
     const xs1 = g1.map(pt => pt[0]);
     const ys1 = g1.map(pt => pt[1]);
     const minX1 = Math.min(...xs1), maxX1 = Math.max(...xs1);
     const minY1 = Math.min(...ys1), maxY1 = Math.max(...ys1);
 
     for (let j = i + 1; j < plotsArr.length; j++) {
-      const g2 = plotsArr[j].polygonGeometry;
-      if (!g2 || !Array.isArray(g2) || g2.length < 3) continue;
+      const g2 = normalizePolygonGeometry(plotsArr[j].polygonGeometry || plotsArr[j].coordinates);
+      if (!g2 || g2.length < 3) continue;
       const xs2 = g2.map(pt => pt[0]);
       const ys2 = g2.map(pt => pt[1]);
       const minX2 = Math.min(...xs2), maxX2 = Math.max(...xs2);
@@ -139,11 +140,15 @@ export default function CadastralVerificationCanvas({
       return;
     }
 
-    // Preserve exact polygonGeometry as extracted from PDF
-    const cleaned = plots.map((p, idx) => ({
-      ...p,
-      plotNumber: cleanPlotName(p.plotNumber || p.id || String(idx + 1))
-    }));
+    // Preserve and normalize exact polygonGeometry
+    const cleaned = plots.map((p, idx) => {
+      const norm = normalizePolygonGeometry(p.polygonGeometry || p.coordinates);
+      return {
+        ...p,
+        plotNumber: cleanPlotName(p.plotNumber || p.id || String(idx + 1)),
+        polygonGeometry: norm.length >= 3 ? norm : (p.polygonGeometry || null)
+      };
+    });
 
     setPlotList(cleaned);
     if (cleaned.length > 0) {
@@ -374,36 +379,7 @@ export default function CadastralVerificationCanvas({
 
   // Calculate SVG ViewBox dynamically from ALL actual plot polygon vertices
   const bounds = useMemo(() => {
-    const plotsWithGeometry = plotList.filter(p => Array.isArray(p.polygonGeometry) && p.polygonGeometry.length >= 3);
-
-    if (!plotsWithGeometry || plotsWithGeometry.length === 0) {
-      return { minX: 0, minY: 0, maxX: 1200, maxY: 900, width: 1200, height: 900 };
-    }
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    plotsWithGeometry.forEach((p) => {
-      p.polygonGeometry.forEach(([x, y]) => {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      });
-    });
-    if (!isFinite(minX) || !isFinite(maxX)) {
-      return { minX: 0, minY: 0, maxX: 1200, maxY: 900, width: 1200, height: 900 };
-    }
-    const pad = 60;
-    const cMinX = Math.max(0, minX - pad);
-    const cMinY = Math.max(0, minY - pad);
-    const cMaxX = maxX + pad;
-    const cMaxY = maxY + pad;
-    return {
-      minX: Math.floor(cMinX),
-      minY: Math.floor(cMinY),
-      maxX: Math.ceil(cMaxX),
-      maxY: Math.ceil(cMaxY),
-      width: Math.ceil(Math.max(300, cMaxX - cMinX)),
-      height: Math.ceil(Math.max(300, cMaxY - cMinY))
-    };
+    return computeBoundingBox(plotList, 1200, 900, 60);
   }, [plotList]);
 
   // EMPTY STATE rendering when no layout or plots exist
@@ -988,33 +964,40 @@ export default function CadastralVerificationCanvas({
               />
 
               {/* Render Unmatched Polygons */}
-              {unmatchedPolygons.map((poly, idx) => (
-                <polygon
-                  key={`unmatched-${idx}`}
-                  points={poly.polygonGeometry.map(([x, y]) => `${x},${y}`).join(' ')}
-                  fill="#334155"
-                  fillOpacity="0.15"
-                  stroke="#475569"
-                  strokeWidth="1"
-                  strokeDasharray="4 2"
-                />
-              ))}
+              {unmatchedPolygons.map((poly, idx) => {
+                const normGeom = normalizePolygonGeometry(poly.polygonGeometry || poly.coordinates);
+                if (normGeom.length < 3) return null;
+                return (
+                  <polygon
+                    key={`unmatched-${idx}`}
+                    points={normGeom.map(pt => `${pt[0]},${pt[1]}`).join(' ')}
+                    fill="#334155"
+                    fillOpacity="0.15"
+                    stroke="#475569"
+                    strokeWidth="1"
+                    strokeDasharray="4 2"
+                  />
+                );
+              })}
 
               {/* Render Actual Extracted Vector Plot Polygons */}
               {filteredPlots.map((p, idx) => {
                 const isSelected = activePlot && isPlotSelected(p, activePlot);
                 const isVerified = p.verificationStatus === 'VERIFIED';
-                const hasGeometry = Array.isArray(p.polygonGeometry) && p.polygonGeometry.length >= 3;
+                const normGeom = normalizePolygonGeometry(p.polygonGeometry || p.coordinates);
+                const hasGeometry = normGeom.length >= 3;
                 
-                const pointsStr = hasGeometry ? p.polygonGeometry.map(([x, y]) => `${x},${y}`).join(' ') : '';
+                const pointsStr = hasGeometry ? normGeom.map(pt => `${pt[0]},${pt[1]}`).join(' ') : '';
                 
                 let cx = 0, cy = 0;
                 if (hasGeometry) {
-                  p.polygonGeometry.forEach(([x, y]) => { cx += x; cy += y; });
-                  cx /= p.polygonGeometry.length;
-                  cy /= p.polygonGeometry.length;
+                  normGeom.forEach(pt => { cx += pt[0]; cy += pt[1]; });
+                  cx /= normGeom.length;
+                  cy /= normGeom.length;
                 } else if (p.labelCenter) {
-                  [cx, cy] = p.labelCenter;
+                  const lc = parsePoint(p.labelCenter) || [100, 100];
+                  cx = lc[0];
+                  cy = lc[1];
                 }
 
                 const displayNum = cleanPlotName(p.plotNumber || p.id || String(idx + 1));

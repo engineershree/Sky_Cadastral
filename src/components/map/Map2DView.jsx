@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp, calculatePolygonArea } from '../../context/AppContext';
+import { normalizePolygonGeometry, computeBoundingBox, calculateCentroid } from '../../utils/geometryUtils';
 
 export default function Map2DView({ onOpenBookingModal }) {
   const {
@@ -112,48 +113,10 @@ export default function Map2DView({ onOpenBookingModal }) {
   };
 
   // Compute polygon centroid for text label positioning
-  const getCentroid = (pts) => {
-    if (!pts || pts.length === 0) return { x: 100, y: 100 };
-    let cx = 0, cy = 0;
-    pts.forEach(([x, y]) => {
-      cx += x;
-      cy += y;
-    });
-    return { x: cx / pts.length, y: cy / pts.length };
-  };
+  const getCentroid = (pts) => calculateCentroid(pts);
 
   const bounds = React.useMemo(() => {
-    if (!layoutPlots || layoutPlots.length === 0) {
-      return { minX: 0, minY: 0, maxX: 1200, maxY: 800, width: 1200, height: 800 };
-    }
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    layoutPlots.forEach((p) => {
-      const coords = p.polygonGeometry;
-      if (coords && Array.isArray(coords)) {
-        coords.forEach(([x, y]) => {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-        });
-      }
-    });
-    if (!isFinite(minX) || !isFinite(maxX)) {
-      return { minX: 0, minY: 0, maxX: 1200, maxY: 800, width: 1200, height: 800 };
-    }
-    const pad = 40;
-    const cMinX = Math.max(0, minX - pad);
-    const cMinY = Math.max(0, minY - pad);
-    const cMaxX = maxX + pad;
-    const cMaxY = maxY + pad;
-    return {
-      minX: Math.floor(cMinX),
-      minY: Math.floor(cMinY),
-      maxX: Math.ceil(cMaxX),
-      maxY: Math.ceil(cMaxY),
-      width: Math.ceil(Math.max(200, cMaxX - cMinX)),
-      height: Math.ceil(Math.max(200, cMaxY - cMinY))
-    };
+    return computeBoundingBox(layoutPlots, 1200, 800, 40);
   }, [layoutPlots]);
 
   return (
@@ -359,9 +322,9 @@ export default function Map2DView({ onOpenBookingModal }) {
                 {/* Render Plot Vector Polygons */}
                 {layoutPlots.map((plot) => {
                   const isSelected = selectedPlotMap?.id === plot.id;
-                  const isEditingThisPlot = isSelected && isEditingVertices;
-                  const pts = isEditingThisPlot ? editedVertices : (plot.polygonGeometry || []);
-                  const pointsString = pts.map(([x, y]) => `${x},${y}`).join(' ');
+                  const rawPts = isEditingThisPlot ? editedVertices : (plot.polygonGeometry || plot.coordinates || []);
+                  const pts = normalizePolygonGeometry(rawPts);
+                  const pointsString = pts.map((pt) => `${pt[0]},${pt[1]}`).join(' ');
                   const centroid = getCentroid(pts);
 
                   let fillColor = '#10b981'; // Available (emerald)

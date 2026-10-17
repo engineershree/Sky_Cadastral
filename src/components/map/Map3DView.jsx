@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useApp } from '../../context/AppContext';
+import { normalizePolygonGeometry } from '../../utils/geometryUtils';
 
 export default function Map3DView({ onOpenBookingModal }) {
   const {
@@ -34,14 +35,15 @@ export default function Map3DView({ onOpenBookingModal }) {
     // Compute dynamic center & span from plot geometries
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     layoutPlots.forEach((p) => {
-      if (p.polygonGeometry && Array.isArray(p.polygonGeometry)) {
-        p.polygonGeometry.forEach(([x, y]) => {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-        });
-      }
+      const coords = normalizePolygonGeometry(p.polygonGeometry || p.coordinates);
+      coords.forEach((pt) => {
+        const x = pt[0];
+        const y = pt[1];
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      });
     });
 
     const centerX = isFinite(minX) ? (minX + maxX) / 2 : 450;
@@ -118,12 +120,14 @@ export default function Map3DView({ onOpenBookingModal }) {
     const plotMeshes = [];
 
     layoutPlots.forEach((plot) => {
-      const coords = plot.polygonGeometry || [];
+      const coords = normalizePolygonGeometry(plot.polygonGeometry || plot.coordinates);
       if (!coords || coords.length < 3) return;
 
       // Create 2D Three.js Shape centered at origin
       const shape = new THREE.Shape();
-      coords.forEach(([px, py], idx) => {
+      coords.forEach((pt, idx) => {
+        const px = pt[0];
+        const py = pt[1];
         const wx = (px - centerX) * scaleFactor;
         const wz = (py - centerY) * scaleFactor;
         if (idx === 0) shape.moveTo(wx, wz);

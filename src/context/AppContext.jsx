@@ -10,15 +10,19 @@ import {
   OFFICIAL_LETTERHEAD_CONFIG,
   INITIAL_AREAS
 } from '../data/mockData';
+import { normalizePolygonGeometry } from '../utils/geometryUtils';
 
 // Utility helper to calculate exact polygon area using Shoelace formula
 export function calculatePolygonArea(coordinates) {
-  if (!coordinates || coordinates.length < 3) return 0;
+  const norm = normalizePolygonGeometry(coordinates);
+  if (!norm || norm.length < 3) return 0;
   let area = 0;
-  const n = coordinates.length;
+  const n = norm.length;
   for (let i = 0; i < n; i++) {
-    const [x1, y1] = coordinates[i];
-    const [x2, y2] = coordinates[(i + 1) % n];
+    const x1 = norm[i][0];
+    const y1 = norm[i][1];
+    const x2 = norm[(i + 1) % n][0];
+    const y2 = norm[(i + 1) % n][1];
     area += x1 * y2 - x2 * y1;
   }
   return Math.round(Math.abs(area / 2));
