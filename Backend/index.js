@@ -25,6 +25,30 @@ const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } }); // 5
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.raw({ type: ['application/pdf', 'application/octet-stream'], limit: '50mb' }));
+
+/**
+ * Robust multipart upload middleware for Cadastral endpoints.
+ * Catches multer errors gracefully and lets raw binary/JSON requests pass through cleanly.
+ */
+const parseCadastralUpload = (req, res, next) => {
+  const contentType = (req.headers['content-type'] || '').toLowerCase();
+  if (contentType.includes('multipart/form-data')) {
+    upload.any()(req, res, (err) => {
+      if (err) {
+        console.error('❌ [CADASTRE] Multipart upload parsing error:', err.message);
+        return res.status(400).json({
+          success: false,
+          error: `Multipart upload error: ${err.message}`,
+          category: 'UPLOAD_ERROR'
+        });
+      }
+      next();
+    });
+  } else {
+    next();
+  }
+};
 
 // Global Real-Time API Request & Responsiveness Logger for Monitoring and Debugging
 app.use((req, res, next) => {
@@ -468,62 +492,128 @@ app.post('/api/cadastral/generate-js-layout', (req, res) => {
 });
 
 // POST /api/cadastral/parse-pdf - Geometry-First Vector Cadastral Extraction Pipeline
-app.post('/api/cadastral/parse-pdf', upload.any(), async (req, res) => {
+app.post('/api/cadastral/parse-pdf', parseCadastralUpload, async (req, res) => {
+  const startTime = Date.now();
   try {
     let pdfInput = null;
     let fileName = 'Uploaded Cadastral Demarcation Plan';
+    let fileSource = '';
 
-    // Robust file extraction: support field 'pdfFile', req.file, req.files array, or body paths
-    const uploadedFile =
-      req.file ||
-      (req.files && Array.isArray(req.files) ? (req.files.find((f) => f.fieldname === 'pdfFile') || req.files[0]) : null);
+    // 1. Multipart uploaded file: support req.file, req.files (array or object)
+    let uploadedFile = null;
+    if (req.file) {
+      uploadedFile = req.file;
+    } else if (Array.isArray(req.files) && req.files.length > 0) {
+      uploadedFile =
+        req.files.find((f) => ['pdfFile', 'file', 'pdf', 'document', 'cadastralPdf', 'plan'].includes(f.fieldname)) ||
+        req.files.find((f) => f.buffer && f.buffer.length > 0) ||
+        req.files[0];
+    } else if (req.files && typeof req.files === 'object') {
+      const allFiles = Object.values(req.files).flat();
+      if (allFiles.length > 0) {
+        uploadedFile =
+          allFiles.find((f) => ['pdfFile', 'file', 'pdf', 'document', 'cadastralPdf', 'plan'].includes(f.fieldname)) ||
+          allFiles.find((f) => f.buffer && f.buffer.length > 0) ||
+          allFiles[0];
+      }
+    }
 
     if (uploadedFile) {
-      if (uploadedFile.buffer && uploadedFile.buffer.length > 0) {
+      if (uploadedFile.buffer && Buffer.isBuffer(uploadedFile.buffer) && uploadedFile.buffer.length > 0) {
         pdfInput = uploadedFile.buffer;
+        fileSource = `multipart:${uploadedFile.fieldname || 'file'}`;
       } else if (uploadedFile.path && fs.existsSync(uploadedFile.path)) {
         pdfInput = fs.readFileSync(uploadedFile.path);
+        fileSource = `multipart:path:${uploadedFile.path}`;
       }
       if (uploadedFile.originalname) {
         fileName = uploadedFile.originalname.replace(/\.pdf$/i, '').replace(/_/g, ' ');
       }
-    } else if (req.body?.pdfPath && fs.existsSync(req.body.pdfPath)) {
-      pdfInput = fs.readFileSync(req.body.pdfPath);
-    } else if (req.body?.pdfBase64) {
-      pdfInput = Buffer.from(req.body.pdfBase64, 'base64');
     }
 
-    // Extract layout metadata parameters from multipart form fields
+    // 2. Raw binary buffer from express.raw()
+    if (!pdfInput && Buffer.isBuffer(req.body) && req.body.length > 0) {
+      pdfInput = req.body;
+      fileSource = 'binary:body';
+    }
+
+    // 3. Base64 payload in JSON or urlencoded
+    if (!pdfInput) {
+      const base64Str = req.body?.pdfBase64 || req.body?.fileBase64 || req.body?.pdf || req.body?.data;
+      if (typeof base64Str === 'string' && base64Str.trim().length > 0) {
+        const cleanBase64 = base64Str.replace(/^data:[^;]+;base64,/, '').trim();
+        try {
+          const buf = Buffer.from(cleanBase64, 'base64');
+          if (buf.length > 0) {
+            pdfInput = buf;
+            fileSource = 'base64:body';
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 4. Server-side path reference (for internal migration / tests)
+    if (!pdfInput && typeof req.body?.pdfPath === 'string' && req.body.pdfPath.trim()) {
+      const candidatePaths = [
+        req.body.pdfPath,
+        path.join(__dirname, req.body.pdfPath),
+        path.join(process.cwd(), req.body.pdfPath),
+        path.join(__dirname, path.basename(req.body.pdfPath))
+      ];
+      for (const p of candidatePaths) {
+        if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+          pdfInput = fs.readFileSync(p);
+          fileSource = `server-path:${p}`;
+          fileName = path.basename(p).replace(/\.pdf$/i, '').replace(/_/g, ' ');
+          break;
+        }
+      }
+    }
+
+    // Phase 3: Strict file existence validation - NEVER return false success
+    if (!pdfInput || pdfInput.length === 0) {
+      console.warn('⚠️ [CADASTRE] POST /api/cadastral/parse-pdf: Missing PDF file or binary stream in request (HTTP 400)');
+      return res.status(400).json({
+        success: false,
+        error: 'No PDF file or binary provided. Please attach a PDF via multipart field "pdfFile" or provide raw binary / base64.',
+        category: 'MISSING_FILE',
+        receivedContentType: req.headers['content-type'] || 'none',
+        expectedFields: ['pdfFile', 'file', 'pdf']
+      });
+    }
+
+    // Phase 3: Strict PDF header signature validation (%PDF-)
+    const headerSlice = pdfInput.subarray(0, Math.min(1024, pdfInput.length));
+    const headerStr = headerSlice.toString('latin1');
+    if (!headerStr.includes('%PDF-')) {
+      console.warn(`⚠️ [CADASTRE] POST /api/cadastral/parse-pdf: Invalid PDF header signature (size: ${pdfInput.length} bytes, HTTP 400)`);
+      return res.status(400).json({
+        success: false,
+        error: 'Uploaded file is not a valid PDF document (missing %PDF- header signature).',
+        category: 'INVALID_PDF_SIGNATURE',
+        byteCount: pdfInput.length
+      });
+    }
+
+    // Extract layout metadata parameters
     const layoutName = (req.body?.layoutName || req.body?.name || fileName || 'Cadastral Demarcation Plan').trim();
     const projectId = (req.body?.projectId || req.body?.areaId || 'AREA-001').trim();
     const projectName = (req.body?.projectName || layoutName).trim();
     const layoutId = `LAYOUT-${Date.now()}`;
 
-    let extractionResult;
-    let isFallback = false;
-    let fallbackReason = '';
+    console.log(`📥 [CADASTRE] Starting vector PDF parsing: "${fileName}" (bytes: ${pdfInput.length}, source: ${fileSource})`);
 
-    if (pdfInput) {
-      try {
-        extractionResult = await parseCadastralPdf(pdfInput);
-      } catch (pythonErr) {
-        console.warn('⚠️ Python PDF vector extraction failed, engaging pure JS vector fallback:', pythonErr.message);
-        isFallback = true;
-        fallbackReason = pythonErr.message;
-        extractionResult = generatePureCadastralLayout({
-          layoutName: layoutName,
-          projectName: projectName,
-          totalPlots: 30
-        });
-      }
-    } else {
-      console.warn('⚠️ No PDF file or binary provided, engaging pure JS vector layout generator');
-      isFallback = true;
-      fallbackReason = 'No PDF file attached';
-      extractionResult = generatePureCadastralLayout({
-        layoutName: layoutName,
-        projectName: projectName,
-        totalPlots: 30
+    let extractionResult;
+    try {
+      extractionResult = await parseCadastralPdf(pdfInput);
+    } catch (pythonErr) {
+      console.error(`❌ [CADASTRE] Cadastral vector extraction engine failed: ${pythonErr.message}`);
+      return res.status(422).json({
+        success: false,
+        error: `Cadastral vector extraction failed: ${pythonErr.message}`,
+        category: 'PARSER_FAILURE',
+        documentName: fileName,
+        byteCount: pdfInput.length
       });
     }
 
@@ -551,6 +641,8 @@ app.post('/api/cadastral/parse-pdf', upload.any(), async (req, res) => {
         return { x: 0, y: 0 };
       });
 
+      const closedPolygon = ensureClosedPolygon(polygonPoints);
+
       const officialArea = Number(p.officialAreaSqm || p.officialArea || p.areaSqm || (Number(p.officialAreaSqft || p.area || 1400) / 10.7639).toFixed(1)) || 133.4;
       const officialAreaSqft = Number(p.officialAreaSqft || p.documentArea || p.area || (officialArea * 10.7639).toFixed(1)) || 1435.9;
       const geometryAreaSqft = Number(p.calculatedAreaSqft || p.geometryAreaSqft || p.area || officialAreaSqft) || 1435.9;
@@ -558,12 +650,16 @@ app.post('/api/cadastral/parse-pdf', upload.any(), async (req, res) => {
       return {
         id: plotId,
         plotNumber: plotNum,
-        polygonGeometry: polygonPoints,
+        polygonGeometry: closedPolygon,
         rawCoordinates: rawGeom,
+        edgeDimensions: p.edgeDimensions || [],
         officialArea: officialArea,
         officialAreaSqft: officialAreaSqft,
         geometryAreaSqft: geometryAreaSqft,
+        calculatedAreaSqft: p.calculatedAreaSqft || geometryAreaSqft,
+        calculatedAreaSqm: p.calculatedAreaSqm || (geometryAreaSqft / 10.7639),
         facing: p.facing || 'East',
+        facingRoadWidth: p.facingRoadWidth || 30,
         status: p.status || 'Available',
         verificationStatus: p.verificationStatus === 'VERIFIED' ? 'Verified' : (p.verificationStatus || 'Verified'),
         length: p.length || 50,
@@ -581,9 +677,9 @@ app.post('/api/cadastral/parse-pdf', upload.any(), async (req, res) => {
       documentName: docName,
       pageCount: reportObj.pageCount || 1,
       pageDimensionsPt: reportObj.pageDimensionsPt || { width: 1684, height: 1191 },
-      boundaryCandidatesFound: reportObj.boundaryCandidatesFound || (formattedPlots.length * 16),
+      boundaryCandidatesFound: reportObj.boundaryCandidatesFound || 0,
       validPolygonsReconstructed: reportObj.validPolygonsReconstructed || formattedPlots.length,
-      tableRecordsExtracted: reportObj.tableRecordsExtracted || formattedPlots.length,
+      tableRecordsExtracted: reportObj.tableRecordsExtracted || 0,
       expectedSourcePlotCount: reportObj.expectedSourcePlotCount || formattedPlots.length,
       matchedPlotCount: reportObj.matchedPlotCount || formattedPlots.length,
       unmatchedPolygonsCount: reportObj.unmatchedPolygonsCount || (extractionResult.unmatchedPolygons || []).length,
@@ -593,11 +689,12 @@ app.post('/api/cadastral/parse-pdf', upload.any(), async (req, res) => {
       geometryMismatchCount: reportObj.geometryMismatchCount || 0,
       verifiedPlotsCount: reportObj.verifiedPlotsCount || formattedPlots.length,
       canPublish: reportObj.canPublish !== undefined ? reportObj.canPublish : true,
-      fallbackMode: isFallback,
-      sourceVerificationNote: reportObj.sourceVerificationNote || (isFallback
-        ? `Vector extraction fallback engaged (${fallbackReason}) — generated clean 2D vector plot geometries.`
-        : "Source document verified successfully with matched plot records.")
+      fallbackMode: false,
+      sourceVerificationNote: reportObj.sourceVerificationNote || "Source document verified successfully with matched plot records."
     };
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ [CADASTRE] PDF parsed successfully in ${duration}ms: ${formattedPlots.length} plots extracted, ${forensicReport.pageCount} page(s), valid polygons: ${forensicReport.validPolygonsReconstructed}`);
 
     return res.status(200).json({
       success: true,
@@ -607,11 +704,20 @@ app.post('/api/cadastral/parse-pdf', upload.any(), async (req, res) => {
       projectName: projectName,
       plots: formattedPlots,
       unmatchedPolygons: extractionResult.unmatchedPolygons || [],
-      forensicReport: forensicReport
+      forensicReport: forensicReport,
+      geoJsonFeatureCollection: extractionResult.geoJsonFeatureCollection,
+      infrastructureGeometry: extractionResult.infrastructureGeometry || { roads: [], openSpaces: [] },
+      bounds: extractionResult.bounds,
+      viewCenter: extractionResult.viewCenter,
+      diagnostics: extractionResult.diagnostics || {
+        pagesProcessed: forensicReport.pageCount,
+        plotCandidatesFound: forensicReport.validPolygonsReconstructed,
+        labeledPlots: formattedPlots.length
+      }
     });
   } catch (err) {
-    console.error('❌ Cadastral Extraction Error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    console.error('❌ [CADASTRE] Fatal Extraction Route Error:', err);
+    res.status(500).json({ success: false, error: err.message, category: 'INTERNAL_ERROR' });
   }
 });
 

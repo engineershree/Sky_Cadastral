@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { execFile } from 'child_process';
 import { fileURLToPath } from 'url';
 
@@ -17,7 +18,8 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
   if (typeof pdfBufferOrPath === 'string') {
     targetPdfPath = pdfBufferOrPath;
   } else if (Buffer.isBuffer(pdfBufferOrPath)) {
-    tempFilePath = path.join(__dirname, `temp_cadastral_${Date.now()}.pdf`);
+    const randomSuffix = crypto.randomBytes(6).toString('hex');
+    tempFilePath = path.join(__dirname, `temp_cadastral_${Date.now()}_${randomSuffix}.pdf`);
     fs.writeFileSync(tempFilePath, pdfBufferOrPath);
     targetPdfPath = tempFilePath;
   } else {
@@ -27,18 +29,21 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
   const scriptPath = path.join(__dirname, 'cadastral_extractor.py');
   const pythonCandidates = process.platform === 'win32' ? ['python', 'python3', 'py'] : ['python3', 'python'];
 
+  const cleanup = () => {
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try { fs.unlinkSync(tempFilePath); } catch (_) {}
+    }
+  };
+
   return new Promise((resolve, reject) => {
     const runExtractor = (candidateIndex) => {
       const pythonCmd = pythonCandidates[candidateIndex];
-      execFile(pythonCmd, [scriptPath, targetPdfPath], { maxBuffer: 50 * 1024 * 1024, timeout: 40000 }, (error, stdout, stderr) => {
+      execFile(pythonCmd, [scriptPath, targetPdfPath], { maxBuffer: 50 * 1024 * 1024, timeout: 75000 }, (error, stdout, stderr) => {
         if (error && candidateIndex + 1 < pythonCandidates.length) {
           return runExtractor(candidateIndex + 1);
         }
 
-        // Clean up temp file if created
-        if (tempFilePath && fs.existsSync(tempFilePath)) {
-          try { fs.unlinkSync(tempFilePath); } catch (e) {}
-        }
+        cleanup();
 
         if (error) {
           console.error('❌ Python Cadastral Extractor Error:', stderr || error.message);
@@ -49,7 +54,11 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
           const jsonStart = stdout.indexOf('{');
           const jsonEnd = stdout.lastIndexOf('}');
           const cleanStdout = (jsonStart !== -1 && jsonEnd > jsonStart) ? stdout.substring(jsonStart, jsonEnd + 1) : stdout;
-        const jsonResult = JSON.parse(cleanStdout);
+          const jsonResult = JSON.parse(cleanStdout);
+
+          if (jsonResult.error) {
+            return reject(new Error(`Cadastral Extractor Error: ${jsonResult.error}`));
+          }
         
         // Map Python result to backend schema plots format
         const plots = (jsonResult.matchedPlots || []).map((p, idx) => ({
@@ -98,6 +107,8 @@ export async function parseCadastralPdf(pdfBufferOrPath) {
           : { minX: 0, maxX: jsonResult.forensicReport?.pageDimensionsPt?.width || 1200, minY: 0, maxY: jsonResult.forensicReport?.pageDimensionsPt?.height || 800, width: 1200, height: 800 };
 
         resolve({
+          pageCount: jsonResult.forensicReport?.pageCount || 1,
+          textLength: jsonResult.forensicReport?.tableRecordsExtracted || 0,
           forensicReport: jsonResult.forensicReport,
           officialTableMap: jsonResult.officialTableMap,
           geoJsonFeatureCollection: jsonResult.geoJsonFeatureCollection,

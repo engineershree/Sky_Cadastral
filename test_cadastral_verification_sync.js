@@ -1,3 +1,4 @@
+
 import dotenv from 'dotenv';
 import { query } from './db.js';
 
@@ -137,7 +138,7 @@ async function runTests() {
     // TEST 2: GET /api/client/areas/:areaId for unverified layout
     // -------------------------------------------------------------------------
     console.log('\n[TEST 2: GET Area Retrieval for Ongoing Verification]');
-    
+
     // Test helper ensureClosedPolygon
     function ensureClosedPolygon(coords) {
       if (!Array.isArray(coords) || coords.length === 0) return coords;
@@ -168,7 +169,7 @@ async function runTests() {
     });
 
     assert(clientPlots1.length === 2, 'Retrieved all 2 saved plots');
-    
+
     // Check closed polygon
     const p1Geom = clientPlots1[0].polygonGeometry;
     const firstP1 = p1Geom[0];
@@ -318,7 +319,7 @@ async function runTests() {
       await query('DELETE FROM plots WHERE layout_id = $1', [testLayoutId]);
       await query('DELETE FROM layouts WHERE id = $1', [testLayoutId]);
       await query('DELETE FROM projects WHERE id = $1', [testProjectId]);
-    } catch (_) {}
+    } catch (_) { }
     process.exit(1);
   }
 }
