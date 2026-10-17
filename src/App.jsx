@@ -505,7 +505,11 @@ function MainAppContent() {
     setUploadLayoutModalOpen(false);
     if (setActiveModule) setActiveModule('Cadastral Verification');
     setForensicReportModalOpen(true);
-    showToast(`🎉 PDF Extraction complete: ${data.plots?.length || 0} plots extracted for ${newMeta.projectName}`);
+    if (data.forensicReport?.fallbackMode) {
+      showToast(`⚠️ PDF extraction fallback engaged (${data.forensicReport?.fallbackReason || 'Native parser fallback'}): ${data.plots?.length || 0} layout plots available for verification.`);
+    } else {
+      showToast(`🎉 Real PDF Extraction Complete: ${data.plots?.length || 0} vector plots extracted for ${newMeta.projectName}`);
+    }
   };
 
   const handleSaveVerifiedLayout = async (verifiedPlots) => {

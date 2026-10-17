@@ -141,12 +141,14 @@ export function AppProvider({ children }) {
       // Live backend offline
     }
 
-    // 2. Fallback to /api proxy
-    try {
-      const res = await fetch(`/api${endpoint}`, options);
-      if (res.ok) return res;
-    } catch (e) {
-      // Proxy offline
+    // 2. Fallback to /api proxy only in local development
+    if (import.meta.env.DEV) {
+      try {
+        const res = await fetch(`/api${endpoint}`, options);
+        if (res.ok) return res;
+      } catch (e) {
+        // Dev proxy offline
+      }
     }
 
     // 3. Try RENDER_API_BASE if not PRIMARY
