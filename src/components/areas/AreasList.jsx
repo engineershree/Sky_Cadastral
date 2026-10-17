@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 
-export default function AreasList({ onOpenAddArea, onOpenEditArea }) {
+export default function AreasList({ onOpenAddArea, onOpenEditArea, onVerifyCadastral }) {
   const {
     areas,
     plots,
@@ -128,6 +128,10 @@ export default function AreasList({ onOpenAddArea, onOpenEditArea }) {
                   const soldCount = areaPlots.filter((p) => p.status === 'Sold').length;
                   const totalValuation = areaPlots.reduce((acc, p) => acc + (p.valuation || 0), 0);
 
+                  const verifiedPlotsCount = areaPlots.filter(p => p.verificationStatus === 'Verified' || p.verificationStatus === 'VERIFIED').length;
+                  const isCadastralVerified = areaPlots.length > 0 && verifiedPlotsCount === areaPlots.length;
+                  const isCadastralOngoing = areaPlots.length > 0 && verifiedPlotsCount < areaPlots.length;
+
                   return (
                     <tr
                       key={area.id}
@@ -141,11 +145,28 @@ export default function AreasList({ onOpenAddArea, onOpenEditArea }) {
                             location_on
                           </span>
                           <div>
-                            <span className="text-sm font-extrabold text-[#001B3A] group-hover:text-[#A67C27] group-hover:underline">
-                              {area.name}
-                            </span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-extrabold text-[#001B3A] group-hover:text-[#A67C27] group-hover:underline">
+                                {area.name}
+                              </span>
+                              {isCadastralVerified ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-300 font-bold">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                  Verified
+                                </span>
+                              ) : isCadastralOngoing ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 font-bold">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                  Verification Ongoing ({verifiedPlotsCount}/{areaPlots.length})
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 font-medium">
+                                  Unverified
+                                </span>
+                              )}
+                            </div>
                             {area.description && (
-                              <span className="text-[10px] text-gray-500 font-normal block max-w-xs truncate">
+                              <span className="text-[10px] text-gray-500 font-normal block max-w-xs truncate mt-0.5">
                                 {area.description}
                               </span>
                             )}
@@ -206,6 +227,21 @@ export default function AreasList({ onOpenAddArea, onOpenEditArea }) {
                       {/* Actions */}
                       <td className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => {
+                              if (onVerifyCadastral) {
+                                onVerifyCadastral(area);
+                              } else {
+                                handleSelectArea(area.name);
+                              }
+                            }}
+                            className="px-2.5 py-1 bg-gradient-to-r from-cyan-700 to-blue-800 text-white hover:from-cyan-600 hover:to-blue-700 rounded text-[11px] font-bold flex items-center gap-1 shadow-xs cursor-pointer"
+                            title="Verify Cadastral Layout & Demarcation Structure"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">verified</span>
+                            <span>Verify Structure</span>
+                          </button>
+
                           <button
                             onClick={() => handleSelectArea(area.name)}
                             className="px-2.5 py-1 bg-[#001B3A] text-white hover:bg-[#002652] rounded text-[11px] font-bold flex items-center gap-1 shadow-xs"

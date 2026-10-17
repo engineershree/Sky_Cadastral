@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 
-export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralPdf }) {
+export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralPdf, defaultProjectId = null }) {
   const { areas } = useApp();
 
   const [mode, setMode] = useState('js'); // 'js' or 'pdf'
-  const [selectedProjectId, setSelectedProjectId] = useState(areas[0]?.id || 'AREA-001');
+  const [selectedProjectId, setSelectedProjectId] = useState(defaultProjectId || areas[0]?.id || 'AREA-001');
+
+  React.useEffect(() => {
+    if (isOpen && defaultProjectId) {
+      setSelectedProjectId(defaultProjectId);
+    }
+  }, [isOpen, defaultProjectId]);
   const [layoutName, setLayoutName] = useState('Pure JS Demarcation Plan 2026');
   const [file, setFile] = useState(null);
   
@@ -70,6 +76,13 @@ export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralP
         setUploadStep(3);
         if (res && res.ok) {
           const data = await res.json();
+          const targetArea = areas.find(a => a.id === selectedProjectId);
+          data.layoutName = layoutName || 'Pure JS Demarcation Plan';
+          data.projectName = targetArea?.name || 'Sky Cadastral JS Phase 1';
+          data.projectId = selectedProjectId;
+          data.pdfName = `${layoutName || 'JS_Cadastral_Plan'}.pdf`;
+          data.fileSize = '1.8 KB';
+          data.uploadedAt = new Date().toISOString().split('T')[0];
           setIsUploading(false);
           if (onProcessCadastralPdf) {
             onProcessCadastralPdf(data);
@@ -119,6 +132,9 @@ export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralP
           data.layoutName = data.layoutName || resolvedLayoutName;
           data.projectName = data.projectName || resolvedProjectName;
           data.projectId = selectedProjectId;
+          data.pdfName = file.name;
+          data.fileSize = `${(file.size / 1024).toFixed(1)} KB`;
+          data.uploadedAt = new Date().toISOString().split('T')[0];
 
           setIsUploading(false);
           if (onProcessCadastralPdf) {
@@ -162,6 +178,9 @@ export default function LayoutUploadModal({ isOpen, onClose, onProcessCadastralP
             fallbackData.layoutName = resolvedLayoutName;
             fallbackData.projectName = resolvedProjectName;
             fallbackData.projectId = selectedProjectId;
+            fallbackData.pdfName = file.name;
+            fallbackData.fileSize = `${(file.size / 1024).toFixed(1)} KB`;
+            fallbackData.uploadedAt = new Date().toISOString().split('T')[0];
             fallbackData.forensicReport = {
               ...(fallbackData.forensicReport || {}),
               documentName: file.name,

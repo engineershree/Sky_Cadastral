@@ -377,6 +377,17 @@ export function AppProvider({ children }) {
     showToast('Plot polygon geometry & vertex boundaries updated and synchronized with Neon DB!');
   };
 
+  const updateBulkPlots = (updatedPlots) => {
+    if (!updatedPlots || !Array.isArray(updatedPlots) || updatedPlots.length === 0) return;
+    setPlots((prev) => {
+      const updatedIds = new Set(updatedPlots.map((p) => p.id || p.plotNumber));
+      const filteredPrev = prev.filter((p) => !updatedIds.has(p.id) && !updatedIds.has(p.plotNumber));
+      const nextList = [...updatedPlots, ...filteredPrev];
+      localStorage.setItem('sky_cadastral_plots', JSON.stringify(nextList));
+      return nextList;
+    });
+  };
+
   useEffect(() => {
     localStorage.setItem('sky_cadastral_bookings', JSON.stringify(bookings));
   }, [bookings]);
@@ -1049,6 +1060,8 @@ export function AppProvider({ children }) {
 
         // Data
         plots,
+        setPlots,
+        updateBulkPlots,
         layouts,
         setLayouts,
         activeLayoutId,

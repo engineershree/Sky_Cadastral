@@ -5,11 +5,11 @@ import React from 'react';
  * Shows full extraction analytics: boundary candidates, valid polygons, expected plots,
  * non-existent source plots (74, 75, 76), table records, and publishing readiness.
  */
-export default function ForensicReportModal({ isOpen, onClose, forensicReport }) {
+export default function ForensicReportModal({ isOpen, onClose, forensicReport, activeCadastralMeta = null }) {
   if (!isOpen || !forensicReport) return null;
 
   const {
-    documentName = 'Uploaded Cadastral Plan.pdf',
+    documentName = activeCadastralMeta?.pdfName || 'Uploaded Cadastral Plan.pdf',
     pageCount = 1,
     pageDimensionsPt = { width: 1684, height: 1191 },
     boundaryCandidatesFound = 0,
@@ -49,16 +49,23 @@ export default function ForensicReportModal({ isOpen, onClose, forensicReport })
               </span>
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white tracking-wide flex items-center gap-2">
-                Forensic Cadastral Extraction Report
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold text-white tracking-wide">
+                  Forensic Cadastral Extraction Report
+                </h3>
+                {activeCadastralMeta?.projectName && (
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-700/60">
+                    {activeCadastralMeta.projectName}
+                  </span>
+                )}
                 {fallbackMode && (
                   <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
                     Fallback Simulation
                   </span>
                 )}
-              </h3>
-              <p className="text-xs text-slate-400 font-mono">
-                Source: {documentName} {pageDimensionsPt?.width ? `(${pageDimensionsPt.width} × ${pageDimensionsPt.height} pt)` : ''}
+              </div>
+              <p className="text-xs text-slate-400 font-mono mt-0.5">
+                PDF Source: <span className="text-cyan-300 font-bold">{documentName}</span> {activeCadastralMeta?.fileSize ? `(${activeCadastralMeta.fileSize})` : ''} • {pageDimensionsPt?.width ? `${pageDimensionsPt.width} × ${pageDimensionsPt.height} pt` : 'Vector Geometry'}
               </p>
             </div>
           </div>

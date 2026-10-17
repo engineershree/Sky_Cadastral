@@ -498,21 +498,24 @@ app.post('/api/cadastral/save-verified-layout', async (req, res) => {
   try {
     const { layoutId, projectId, projectName, name, plots, infrastructureGeometry, forensicReport } = req.body;
     const targetLayoutId = layoutId || `LAYOUT-${Date.now()}`;
+    const allPlotsVerified = Array.isArray(plots) && plots.length > 0 && plots.every(p => p.verificationStatus === 'Verified' || p.verificationStatus === 'VERIFIED');
+    const layoutStatus = allPlotsVerified ? 'Verified' : 'Needs Verification';
 
     // 1. Upsert Layout Record
     const layoutRes = await query(
       `INSERT INTO layouts (id, project_id, project_name, name, status, extracted_plots_count, infrastructure_geometry, uploaded_at)
-       VALUES ($1, $2, $3, $4, 'Needs Verification', $5, $6, CURRENT_DATE)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE)
        ON CONFLICT (id) DO UPDATE 
        SET extracted_plots_count = EXCLUDED.extracted_plots_count,
            infrastructure_geometry = EXCLUDED.infrastructure_geometry,
-           status = 'Needs Verification'
+           status = $5
        RETURNING *`,
       [
         targetLayoutId,
         projectId || 'AREA-001',
         projectName || 'Golden City Vita Layout',
         name || 'Golden City Final Plan',
+        layoutStatus,
         plots.length,
         JSON.stringify(infrastructureGeometry || { roads: [], openSpaces: [] })
       ]
@@ -553,10 +556,31 @@ app.post('/api/cadastral/save-verified-layout', async (req, res) => {
       savedPlots.push(plotRes.rows[0]);
     }
 
+    const verifiedPlotsCount = savedPlots.filter(p => p.verification_status === 'Verified' || p.verification_status === 'VERIFIED').length;
+    const isOngoing = !allPlotsVerified;
+
     res.json({
       success: true,
       layout: layoutRes.rows[0],
       savedPlotsCount: savedPlots.length,
+      verification: {
+        isVerified: allPlotsVerified,
+        verificationOngoing: isOngoing,
+        status: allPlotsVerified ? 'Verified' : 'Verification Ongoing',
+        message: allPlotsVerified 
+          ? 'All cadastral plot geometries verified and synchronized live.' 
+          : 'Cadastral verification is currently in progress for this area. Official demarcation and land registry validation are underway.',
+        totalPlots: savedPlots.length,
+        verifiedPlots: verifiedPlotsCount,
+        unverifiedPlots: savedPlots.length - verifiedPlotsCount
+      },
+      notice: {
+        show: isOngoing,
+        type: isOngoing ? 'warning' : 'success',
+        message: isOngoing 
+          ? 'Cadastral verification is currently in progress for this area. Official demarcation and land registry validation are underway.' 
+          : 'All plots verified and ready for client publishing.'
+      },
       forensicReport
     });
   } catch (err) {
@@ -743,7 +767,15 @@ app.get('/api/client/areas', async (req, res) => {
   try {
     const projectsRes = await query('SELECT * FROM projects ORDER BY created_at DESC');
     const layoutsRes = await query('SELECT * FROM layouts ORDER BY created_at DESC');
-    const plotsCountRes = await query('SELECT layout_id, project, COUNT(*) as count FROM plots GROUP BY layout_id, project');
+    const plotsCountRes = await query(`
+      SELECT 
+        layout_id, 
+        project, 
+        COUNT(*) as total_count,
+        COUNT(CASE WHEN verification_status = 'Verified' OR verification_status = 'VERIFIED' THEN 1 END) as verified_count
+      FROM plots 
+      GROUP BY layout_id, project
+    `);
 
     const projects = projectsRes.rows;
     const layouts = layoutsRes.rows;
@@ -754,41 +786,70 @@ app.get('/api/client/areas', async (req, res) => {
         (l) => l.project_id === proj.id || (l.project_name && l.project_name.toLowerCase() === proj.name.toLowerCase())
       );
 
-      const totalPlots = plotCounts
-        .filter((c) => (c.project && c.project.toLowerCase() === proj.name.toLowerCase()) || projLayouts.some((l) => l.id === c.layout_id))
-        .reduce((sum, c) => sum + Number(c.count), 0);
+      const relevantCounts = plotCounts.filter(
+        (c) => (c.project && c.project.toLowerCase() === proj.name.toLowerCase()) || projLayouts.some((l) => l.id === c.layout_id)
+      );
+
+      const totalPlots = relevantCounts.reduce((sum, c) => sum + Number(c.total_count || 0), 0);
+      const verifiedPlots = relevantCounts.reduce((sum, c) => sum + Number(c.verified_count || 0), 0);
+      const unverifiedPlots = totalPlots - verifiedPlots;
 
       const mappedLayouts = projLayouts.map((l) => {
         const lCount = plotCounts.find((c) => c.layout_id === l.id);
+        const lTotal = lCount ? Number(lCount.total_count) : Number(l.extracted_plots_count || 0);
+        const lVerified = lCount ? Number(lCount.verified_count) : (l.status === 'Published' || l.status === 'Verified' ? lTotal : 0);
         return {
           id: l.id,
           layoutId: l.id,
           name: l.name,
           layoutName: l.name,
-          status: l.status || 'Published',
+          status: l.status || 'Needs Verification',
           pdfUrl: l.original_pdf_url || '',
           pdfName: l.original_pdf_name || '',
           fileSize: l.file_size || '',
           boundingWidth: Number(l.bounding_width || 800),
           boundingHeight: Number(l.bounding_height || 600),
-          plotCount: lCount ? Number(lCount.count) : Number(l.extracted_plots_count || 0)
+          plotCount: lTotal,
+          verifiedPlotCount: lVerified
         };
       });
 
       if (mappedLayouts.length === 0) {
         mappedLayouts.push({
-          id: proj.id,
-          layoutId: proj.id,
+          id: `LAYOUT-${proj.id}`,
+          layoutId: `LAYOUT-${proj.id}`,
           name: `${proj.name} Master Plan`,
           layoutName: `${proj.name} Master Plan`,
-          status: 'Published',
+          status: 'Needs Verification',
           pdfUrl: '',
           pdfName: '',
           fileSize: '',
           boundingWidth: 800,
           boundingHeight: 600,
-          plotCount: totalPlots
+          plotCount: totalPlots,
+          verifiedPlotCount: verifiedPlots
         });
+      }
+
+      const primaryLayoutStatus = mappedLayouts[0]?.status || 'Needs Verification';
+      const isVerified = (primaryLayoutStatus === 'Published' || primaryLayoutStatus === 'Verified') && totalPlots > 0 && unverifiedPlots === 0;
+      const isOngoing = (primaryLayoutStatus === 'Needs Verification' || primaryLayoutStatus === 'Processing' || (totalPlots > 0 && unverifiedPlots > 0));
+
+      let verificationStatusStr = 'Unverified';
+      let messageStr = 'This cadastral area is currently unverified. Official survey measurement is pending.';
+      let noticeType = 'info';
+      let noticeBadge = 'Unverified Area';
+
+      if (isVerified) {
+        verificationStatusStr = 'Verified & Published';
+        messageStr = 'All plot boundary demarcations and legal cadastral records have been officially verified and published.';
+        noticeType = 'success';
+        noticeBadge = 'Officially Verified';
+      } else if (isOngoing) {
+        verificationStatusStr = 'Verification Ongoing';
+        messageStr = 'Cadastral verification is currently in progress for this area. Official demarcation, boundary survey, and land registry validation are underway.';
+        noticeType = 'warning';
+        noticeBadge = 'Verification Ongoing';
       }
 
       return {
@@ -800,13 +861,25 @@ app.get('/api/client/areas', async (req, res) => {
         address: proj.address || '',
         location: proj.address || '',
         description: proj.description || '',
-        status: 'Published',
+        status: primaryLayoutStatus,
+        isVerified,
+        verificationOngoing: isOngoing,
+        verificationStatus: verificationStatusStr,
+        verificationMessage: messageStr,
+        notice: {
+          show: !isVerified,
+          type: noticeType,
+          badge: noticeBadge,
+          message: messageStr
+        },
         pdfUrl: mappedLayouts[0].pdfUrl || '',
         pdfName: mappedLayouts[0].pdfName || '',
         fileSize: mappedLayouts[0].fileSize || '',
         boundingWidth: mappedLayouts[0].boundingWidth || 800,
         boundingHeight: mappedLayouts[0].boundingHeight || 600,
         plotCount: totalPlots || mappedLayouts[0].plotCount || 0,
+        verifiedPlotCount: verifiedPlots,
+        unverifiedPlotCount: unverifiedPlots,
         layouts: mappedLayouts
       };
     });
@@ -815,6 +888,18 @@ app.get('/api/client/areas', async (req, res) => {
       const alreadyIncluded = areasList.some((a) => a.layouts && a.layouts.some((ly) => ly.id === l.id));
       if (!alreadyIncluded) {
         const lCount = plotCounts.find((c) => c.layout_id === l.id);
+        const lTotal = lCount ? Number(lCount.total_count) : Number(l.extracted_plots_count || 0);
+        const lVerified = lCount ? Number(lCount.verified_count) : (l.status === 'Published' || l.status === 'Verified' ? lTotal : 0);
+        const lUnverified = lTotal - lVerified;
+
+        const isVerified = (l.status === 'Published' || l.status === 'Verified') && lTotal > 0 && lUnverified === 0;
+        const isOngoing = (l.status === 'Needs Verification' || l.status === 'Processing' || (lTotal > 0 && lUnverified > 0));
+
+        let verificationStatusStr = isVerified ? 'Verified & Published' : (isOngoing ? 'Verification Ongoing' : 'Unverified');
+        let messageStr = isVerified 
+          ? 'All plot boundary demarcations and legal cadastral records have been officially verified and published.'
+          : (isOngoing ? 'Cadastral verification is currently in progress for this area. Official demarcation, boundary survey, and land registry validation are underway.' : 'This cadastral area is currently unverified. Official survey measurement is pending.');
+
         areasList.push({
           id: l.id,
           layoutId: l.id,
@@ -825,25 +910,38 @@ app.get('/api/client/areas', async (req, res) => {
           address: '',
           location: '',
           description: '',
-          status: l.status || 'Published',
+          status: l.status || 'Needs Verification',
+          isVerified,
+          verificationOngoing: isOngoing,
+          verificationStatus: verificationStatusStr,
+          verificationMessage: messageStr,
+          notice: {
+            show: !isVerified,
+            type: isOngoing ? 'warning' : (isVerified ? 'success' : 'info'),
+            badge: verificationStatusStr,
+            message: messageStr
+          },
           pdfUrl: l.original_pdf_url || '',
           pdfName: l.original_pdf_name || '',
           fileSize: l.file_size || '',
           boundingWidth: Number(l.bounding_width || 800),
           boundingHeight: Number(l.bounding_height || 600),
-          plotCount: lCount ? Number(lCount.count) : Number(l.extracted_plots_count || 0),
+          plotCount: lTotal,
+          verifiedPlotCount: lVerified,
+          unverifiedPlotCount: lUnverified,
           layouts: [{
             id: l.id,
             layoutId: l.id,
             name: l.name,
             layoutName: l.name,
-            status: l.status || 'Published',
+            status: l.status || 'Needs Verification',
             pdfUrl: l.original_pdf_url || '',
             pdfName: l.original_pdf_name || '',
             fileSize: l.file_size || '',
             boundingWidth: Number(l.bounding_width || 800),
             boundingHeight: Number(l.bounding_height || 600),
-            plotCount: lCount ? Number(lCount.count) : Number(l.extracted_plots_count || 0)
+            plotCount: lTotal,
+            verifiedPlotCount: lVerified
           }]
         });
       }
@@ -860,11 +958,14 @@ app.get('/api/client/areas', async (req, res) => {
   }
 });
 
-// 6b. GET /api/client/areas/:areaId - Returns Area Metadata + Bounds + Official PDF Reference
+// 6b. GET /api/client/areas/:areaId - Returns Area Metadata + Bounds + Official PDF Reference + Verification State
 app.get('/api/client/areas/:areaId', async (req, res) => {
   try {
     const { areaId } = req.params;
-    const { rows } = await query(`
+    let r = null;
+
+    // 1. First search layouts with project join
+    const layoutRes = await query(`
       SELECT 
         l.id as layout_id,
         l.name as layout_name,
@@ -880,53 +981,68 @@ app.get('/api/client/areas/:areaId', async (req, res) => {
         p.name as project_name,
         p.address as project_address,
         p.description as project_description,
+        p.owner_name as project_owner,
         (SELECT COUNT(*) FROM plots WHERE layout_id = l.id) as total_plots_count,
-        (SELECT COUNT(*) FROM plots WHERE layout_id = l.id AND (verification_status = 'Verified' OR verification_status IS NULL)) as verified_plots_count
+        (SELECT COUNT(*) FROM plots WHERE layout_id = l.id AND (verification_status = 'Verified' OR verification_status = 'VERIFIED')) as verified_plots_count
       FROM layouts l
       LEFT JOIN projects p ON l.project_id = p.id
-      WHERE l.id = $1 OR l.project_id = $1 OR p.id = $1
+      WHERE l.id = $1 OR l.project_id = $1 OR p.id = $1 OR p.name ILIKE $1
+      ORDER BY l.created_at DESC
       LIMIT 1
     `, [areaId]);
 
-    if (rows.length === 0) {
-      return res.status(404).json({ error: `Area/Layout with ID ${areaId} not found` });
+    if (layoutRes.rows.length > 0) {
+      r = layoutRes.rows[0];
+    } else {
+      // 2. Fallback: Search projects directly if area has no layout row yet
+      const projRes = await query(
+        'SELECT id, name, owner_name, address, description FROM projects WHERE id = $1 OR name ILIKE $1 LIMIT 1',
+        [areaId]
+      );
+      if (projRes.rows.length > 0) {
+        const pr = projRes.rows[0];
+        r = {
+          layout_id: `LAYOUT-${pr.id}`,
+          layout_name: `${pr.name} Sanctioned Demarcation Plan`,
+          layout_status: 'Needs Verification',
+          original_pdf_url: '',
+          original_pdf_name: 'Demarcation_Plan.pdf',
+          file_size: '2.4 MB',
+          bounding_width: 800,
+          bounding_height: 600,
+          extracted_plots_count: 0,
+          uploaded_at: new Date().toISOString().split('T')[0],
+          project_id: pr.id,
+          project_name: pr.name,
+          project_address: pr.address || '',
+          project_description: pr.description || '',
+          project_owner: pr.owner_name || '',
+          total_plots_count: 0,
+          verified_plots_count: 0
+        };
+      } else {
+        return res.status(404).json({
+          success: false,
+          error: `Area/Layout with ID "${areaId}" not found in database.`
+        });
+      }
     }
 
-    const r = rows[0];
-    const area = {
-      id: r.layout_id,
-      layoutId: r.layout_id,
-      projectId: r.project_id || r.layout_id,
-      name: r.project_name || r.layout_name,
-      layoutName: r.layout_name,
-      address: r.project_address || '',
-      description: r.project_description || '',
-      location: r.project_address || '',
-      status: r.layout_status || 'Published',
-      pdfUrl: r.original_pdf_url || '',
-      pdfName: r.original_pdf_name || '',
-      fileSize: r.file_size || '',
-      bounds: {
-        minX: 0,
-        maxX: Number(r.bounding_width || 800),
-        minY: 0,
-        maxY: Number(r.bounding_height || 600)
-      },
-      viewCenter: [Number(r.bounding_width || 800) / 2, Number(r.bounding_height || 600) / 2],
-      totalPlots: Number(r.total_plots_count || 0),
-      verifiedPlotsCount: Number(r.verified_plots_count || 0)
-    };
-
-    // Also fetch plots for this area to return complete layout bundle
+    // 3. Fetch exact plot records for this area/layout
     const plotsQuery = await query(`
       SELECT 
         p.id, p.plot_number, p.layout_id, p.project, p.area, p.unit, p.length, p.width,
         p.document_area, p.facing, p.facing_road_width, p.polygon_geometry, p.valuation,
         p.price_per_sqft, p.status, p.location, p.verification_status
       FROM plots p
-      WHERE (p.layout_id = $1 OR p.project = $1 OR EXISTS (SELECT 1 FROM layouts l WHERE l.id = p.layout_id AND (l.id = $1 OR l.project_id = $1)))
+      WHERE (
+        p.layout_id = $1 
+        OR p.project = $2 
+        OR (p.project IS NOT NULL AND p.project ILIKE $2)
+        OR EXISTS (SELECT 1 FROM layouts l WHERE l.id = p.layout_id AND (l.id = $1 OR l.project_id = $3))
+      )
       ORDER BY p.plot_number ASC
-    `, [r.layout_id]);
+    `, [r.layout_id, r.project_name || '', r.project_id || '']);
 
     const plots = plotsQuery.rows.map((pr) => {
       const parsedGeom = typeof pr.polygon_geometry === 'string' ? JSON.parse(pr.polygon_geometry) : pr.polygon_geometry;
@@ -948,16 +1064,98 @@ app.get('/api/client/areas/:areaId', async (req, res) => {
         pricePerSqFt: Number(pr.price_per_sqft || 0),
         status: pr.status || 'Available',
         location: pr.location || '',
-        verificationStatus: pr.verification_status || 'Verified',
+        verificationStatus: pr.verification_status || 'Needs Verification',
         isAvailable: pr.status === 'Available'
       };
     });
 
+    const totalPlots = plots.length;
+    const verifiedPlotsCount = plots.filter(p => p.verificationStatus === 'Verified' || p.verificationStatus === 'VERIFIED').length;
+    const unverifiedPlotsCount = totalPlots - verifiedPlotsCount;
+    const layoutStatus = r.layout_status || (unverifiedPlotsCount === 0 && totalPlots > 0 ? 'Verified' : 'Needs Verification');
+
+    const isVerified = (layoutStatus === 'Published' || layoutStatus === 'Verified') && totalPlots > 0 && unverifiedPlotsCount === 0;
+    const isOngoing = (layoutStatus === 'Needs Verification' || layoutStatus === 'Processing' || (totalPlots > 0 && unverifiedPlotsCount > 0));
+
+    let verificationStatusText = 'Unverified';
+    let verificationMessage = 'This land parcel area is currently unverified. Official demarcation measurements are pending surveyor validation.';
+    let noticeType = 'info';
+    let noticeBadge = 'Unverified Area';
+
+    if (isVerified) {
+      verificationStatusText = 'Verified & Published';
+      verificationMessage = 'All plot boundary demarcations and legal cadastral records have been officially verified and published.';
+      noticeType = 'success';
+      noticeBadge = 'Officially Verified';
+    } else if (isOngoing) {
+      verificationStatusText = 'Verification Ongoing';
+      verificationMessage = 'Cadastral verification is currently in progress for this area. Official demarcation, boundary survey, and land registry validation are underway. Final layout will be published once fully approved.';
+      noticeType = 'warning';
+      noticeBadge = 'Verification Ongoing';
+    }
+
+    const verification = {
+      isVerified,
+      verificationOngoing: isOngoing,
+      status: verificationStatusText,
+      badge: noticeBadge,
+      title: isVerified ? 'Verified Cadastral Layout' : (isOngoing ? 'Cadastral Verification in Progress' : 'Unverified Cadastral Area'),
+      message: verificationMessage,
+      totalPlots,
+      verifiedPlots: verifiedPlotsCount,
+      unverifiedPlots: unverifiedPlotsCount,
+      progressPercentage: totalPlots > 0 ? Math.round((verifiedPlotsCount / totalPlots) * 100) : 0,
+      canDisplayInteractivePlots: true,
+      lastUpdated: new Date().toISOString()
+    };
+
+    const notice = {
+      show: !isVerified,
+      type: noticeType,
+      badge: noticeBadge,
+      title: isOngoing ? 'Notice: Demarcation Verification in Progress' : 'Notice: Unverified Area',
+      message: verificationMessage,
+      code: isOngoing ? 'CADASTRAL_VERIFICATION_ONGOING' : (isVerified ? 'CADASTRAL_VERIFIED' : 'CADASTRAL_UNVERIFIED')
+    };
+
+    const area = {
+      id: r.layout_id,
+      layoutId: r.layout_id,
+      projectId: r.project_id || r.layout_id,
+      name: r.project_name || r.layout_name,
+      layoutName: r.layout_name,
+      ownerName: r.project_owner || 'Akash Kamble',
+      address: r.project_address || '',
+      description: r.project_description || '',
+      location: r.project_address || '',
+      status: layoutStatus,
+      isVerified,
+      verificationOngoing: isOngoing,
+      verificationStatus: verificationStatusText,
+      verificationMessage,
+      pdfUrl: r.original_pdf_url || '',
+      pdfName: r.original_pdf_name || '',
+      fileSize: r.file_size || '',
+      bounds: {
+        minX: 0,
+        maxX: Number(r.bounding_width || 800),
+        minY: 0,
+        maxY: Number(r.bounding_height || 600)
+      },
+      viewCenter: [Number(r.bounding_width || 800) / 2, Number(r.bounding_height || 600) / 2],
+      totalPlots,
+      verifiedPlotsCount,
+      unverifiedPlotsCount
+    };
+
     res.json({
       success: true,
       area,
-      metadata: area, // Alias for client compatibility
-      project: { id: area.projectId, name: area.name, address: area.address },
+      metadata: area,
+      project: { id: area.projectId, name: area.name, address: area.address, ownerName: area.ownerName },
+      verification,
+      notice,
+      message: verificationMessage,
       plots
     });
   } catch (err) {
@@ -965,17 +1163,35 @@ app.get('/api/client/areas/:areaId', async (req, res) => {
   }
 });
 
-// 6c. GET /api/client/areas/:areaId/plots - Returns Verified/Published Plots for Area
+// 6c. GET /api/client/areas/:areaId/plots - Returns Verified/Published Plots for Area with Verification Notice
 app.get('/api/client/areas/:areaId/plots', async (req, res) => {
   try {
     const { areaId } = req.params;
+    
+    // Fetch layout and project details for verification state
+    const areaMetaRes = await query(`
+      SELECT 
+        l.id as layout_id, l.name as layout_name, l.status as layout_status,
+        p.id as project_id, p.name as project_name
+      FROM layouts l
+      LEFT JOIN projects p ON l.project_id = p.id
+      WHERE l.id = $1 OR l.project_id = $1 OR p.id = $1 OR p.name ILIKE $1
+      LIMIT 1
+    `, [areaId]);
+
+    const lStatus = areaMetaRes.rows[0]?.layout_status || 'Needs Verification';
+
     const { rows } = await query(`
       SELECT 
         p.id, p.plot_number, p.layout_id, p.project, p.area, p.unit, p.length, p.width,
         p.document_area, p.facing, p.facing_road_width, p.polygon_geometry, p.valuation,
         p.price_per_sqft, p.status, p.location, p.verification_status
       FROM plots p
-      WHERE (p.layout_id = $1 OR p.project = $1 OR EXISTS (SELECT 1 FROM layouts l WHERE l.id = p.layout_id AND (l.id = $1 OR l.project_id = $1)))
+      WHERE (
+        p.layout_id = $1 
+        OR p.project = $1 
+        OR EXISTS (SELECT 1 FROM layouts l WHERE l.id = p.layout_id AND (l.id = $1 OR l.project_id = $1))
+      )
       ORDER BY p.plot_number ASC
     `, [areaId]);
 
@@ -999,15 +1215,55 @@ app.get('/api/client/areas/:areaId/plots', async (req, res) => {
         pricePerSqFt: Number(r.price_per_sqft || 0),
         status: r.status || 'Available',
         location: r.location || '',
-        verificationStatus: r.verification_status || 'Verified',
+        verificationStatus: r.verification_status || 'Needs Verification',
         isAvailable: r.status === 'Available'
       };
     });
+
+    const totalPlots = clientPlots.length;
+    const verifiedPlotsCount = clientPlots.filter(p => p.verificationStatus === 'Verified' || p.verificationStatus === 'VERIFIED').length;
+    const unverifiedPlotsCount = totalPlots - verifiedPlotsCount;
+
+    const isVerified = (lStatus === 'Published' || lStatus === 'Verified') && totalPlots > 0 && unverifiedPlotsCount === 0;
+    const isOngoing = (lStatus === 'Needs Verification' || lStatus === 'Processing' || (totalPlots > 0 && unverifiedPlotsCount > 0));
+
+    let statusText = isVerified ? 'Verified & Published' : (isOngoing ? 'Verification Ongoing' : 'Unverified');
+    let messageText = isVerified
+      ? 'All plot boundary demarcations and legal cadastral records have been officially verified and published.'
+      : (isOngoing 
+          ? 'Cadastral verification is currently in progress for this area. Official demarcation, boundary survey, and land registry validation are underway. Final layout will be published once fully approved.' 
+          : 'This cadastral area is currently unverified. Official survey measurement is pending.');
+
+    const verification = {
+      isVerified,
+      verificationOngoing: isOngoing,
+      status: statusText,
+      badge: isVerified ? 'Officially Verified' : (isOngoing ? 'Verification Ongoing' : 'Unverified Area'),
+      title: isOngoing ? 'Cadastral Verification in Progress' : (isVerified ? 'Verified Cadastral Layout' : 'Unverified Area'),
+      message: messageText,
+      totalPlots,
+      verifiedPlots: verifiedPlotsCount,
+      unverifiedPlots: unverifiedPlotsCount,
+      progressPercentage: totalPlots > 0 ? Math.round((verifiedPlotsCount / totalPlots) * 100) : 0,
+      lastUpdated: new Date().toISOString()
+    };
+
+    const notice = {
+      show: !isVerified,
+      type: isOngoing ? 'warning' : 'info',
+      badge: verification.badge,
+      title: isOngoing ? 'Notice: Demarcation Verification in Progress' : 'Notice: Unverified Area',
+      message: messageText,
+      code: isOngoing ? 'CADASTRAL_VERIFICATION_ONGOING' : (isVerified ? 'CADASTRAL_VERIFIED' : 'CADASTRAL_UNVERIFIED')
+    };
 
     res.json({
       success: true,
       areaId,
       totalPlots: clientPlots.length,
+      verification,
+      notice,
+      message: messageText,
       plots: clientPlots
     });
   } catch (err) {
@@ -1088,6 +1344,13 @@ app.get('/api/client/published-layouts', async (req, res) => {
 app.get('/api/client/layouts/:layoutId/plots', async (req, res) => {
   try {
     const { layoutId } = req.params;
+
+    const layoutMetaRes = await query(
+      'SELECT id, name, status, project_id, project_name FROM layouts WHERE id = $1 LIMIT 1',
+      [layoutId]
+    );
+    const lStatus = layoutMetaRes.rows[0]?.status || 'Needs Verification';
+
     const { rows } = await query(
       'SELECT id, plot_number, layout_id, project, area, unit, length, width, document_area, facing, facing_road_width, polygon_geometry, valuation, price_per_sqft, status, verification_status FROM plots WHERE layout_id = $1 OR project = $1 ORDER BY plot_number ASC',
       [layoutId]
@@ -1111,14 +1374,55 @@ app.get('/api/client/layouts/:layoutId/plots', async (req, res) => {
         valuation: Number(r.valuation),
         pricePerSqFt: Number(r.price_per_sqft),
         status: r.status,
+        verificationStatus: r.verification_status || 'Needs Verification',
         isAvailable: r.status === 'Available'
       };
     });
+
+    const totalPlots = clientPlots.length;
+    const verifiedPlotsCount = clientPlots.filter(p => p.verificationStatus === 'Verified' || p.verificationStatus === 'VERIFIED').length;
+    const unverifiedPlotsCount = totalPlots - verifiedPlotsCount;
+
+    const isVerified = (lStatus === 'Published' || lStatus === 'Verified') && totalPlots > 0 && unverifiedPlotsCount === 0;
+    const isOngoing = (lStatus === 'Needs Verification' || lStatus === 'Processing' || (totalPlots > 0 && unverifiedPlotsCount > 0));
+
+    let statusText = isVerified ? 'Verified & Published' : (isOngoing ? 'Verification Ongoing' : 'Unverified');
+    let messageText = isVerified
+      ? 'All plot boundary demarcations and legal cadastral records have been officially verified and published.'
+      : (isOngoing 
+          ? 'Cadastral verification is currently in progress for this area. Official demarcation, boundary survey, and land registry validation are underway. Final layout will be published once fully approved.' 
+          : 'This cadastral area is currently unverified. Official survey measurement is pending.');
+
+    const verification = {
+      isVerified,
+      verificationOngoing: isOngoing,
+      status: statusText,
+      badge: isVerified ? 'Officially Verified' : (isOngoing ? 'Verification Ongoing' : 'Unverified Area'),
+      title: isOngoing ? 'Cadastral Verification in Progress' : (isVerified ? 'Verified Cadastral Layout' : 'Unverified Area'),
+      message: messageText,
+      totalPlots,
+      verifiedPlots: verifiedPlotsCount,
+      unverifiedPlots: unverifiedPlotsCount,
+      progressPercentage: totalPlots > 0 ? Math.round((verifiedPlotsCount / totalPlots) * 100) : 0,
+      lastUpdated: new Date().toISOString()
+    };
+
+    const notice = {
+      show: !isVerified,
+      type: isOngoing ? 'warning' : 'info',
+      badge: verification.badge,
+      title: isOngoing ? 'Notice: Demarcation Verification in Progress' : 'Notice: Unverified Area',
+      message: messageText,
+      code: isOngoing ? 'CADASTRAL_VERIFICATION_ONGOING' : (isVerified ? 'CADASTRAL_VERIFIED' : 'CADASTRAL_UNVERIFIED')
+    };
 
     res.json({
       success: true,
       layoutId,
       totalPlots: clientPlots.length,
+      verification,
+      notice,
+      message: messageText,
       plots: clientPlots
     });
   } catch (err) {
