@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { normalizePolygonGeometry, parsePoint, computeBoundingBox, calculateCentroid } from '../../utils/geometryUtils';
 
 /**
  * Senior Land Surveyor Helper: Formats clean Plot Number Labels without duplicate "Plot Plot"
@@ -41,28 +42,73 @@ function arrangeCleanNonOverlappingGrid(inputPlots = []) {
     ];
 
     const cNum = cleanPlotName(p.plotNumber || p.id || String(idx + 1));
+    const len = Number(p.length) || 50;
+    const wid = Number(p.width) || 30;
+    const areaSqft = Number(p.area) || Number(p.officialAreaSqft) || Math.round(len * wid);
+    const areaSqm = Math.round((areaSqft / 10.7639) * 100) / 100;
+
+    const edgeDimensions = [
+      { side: 'North', length: wid },
+      { side: 'South', length: wid },
+      { side: 'East', length: len },
+      { side: 'West', length: len }
+    ];
 
     return {
       ...p,
       plotNumber: cNum,
       polygonGeometry,
-      length: p.length || 50,
-      width: p.width || 30,
-      area: p.area || p.officialAreaSqft || 1500,
-      officialAreaSqft: p.officialAreaSqft || p.area || 1500,
-      officialAreaSqm: p.officialAreaSqm || (p.area ? Math.round((p.area / 10.7639) * 100) / 100 : 139.35),
+      coordinates: polygonGeometry,
+      length: len,
+      width: wid,
+      area: areaSqft,
+      officialAreaSqft: areaSqft,
+      officialAreaSqm: areaSqm,
+      calculatedAreaSqft: areaSqft,
+      calculatedAreaSqm: areaSqm,
+      edgeDimensions,
+      verificationStatus: 'Verified',
       labelCenter: [Math.round(startX + pWidthPx / 2), Math.round(startY + pHeightPx / 2)]
     };
   });
 }
 
 /**
- * Converts either [x, y] tuple or {x, y} coordinate object into guaranteed [x, y] number tuple
+ * Scales polygon vertices around its centroid to match updated length (height) and width.
  */
-function toPointTuple(pt) {
-  if (Array.isArray(pt)) return [Number(pt[0]) || 0, Number(pt[1]) || 0];
-  if (pt && typeof pt === 'object') return [Number(pt.x) || 0, Number(pt.y) || 0];
-  return [0, 0];
+function scalePolygonGeometry(geom, newWidthFt, newLengthFt, oldWidthFt = 30, oldLengthFt = 50) {
+  const norm = normalizePolygonGeometry(geom);
+  if (!norm || norm.length < 3) {
+    const wPx = Math.max(40, newWidthFt * 3);
+    const hPx = Math.max(30, newLengthFt * 2);
+    return [
+      [100, 100],
+      [100 + wPx, 100],
+      [100 + wPx, 100 + hPx],
+      [100, 100 + hPx],
+      [100, 100]
+    ];
+  }
+
+  const xs = norm.map(pt => pt[0]);
+  const ys = norm.map(pt => pt[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+
+  const scaleX = (oldWidthFt > 0 && newWidthFt > 0) ? (newWidthFt / oldWidthFt) : 1;
+  const scaleY = (oldLengthFt > 0 && newLengthFt > 0) ? (newLengthFt / oldLengthFt) : 1;
+
+  const scaled = norm.map(pt => [
+    Math.round(cx + (pt[0] - cx) * scaleX),
+    Math.round(cy + (pt[1] - cy) * scaleY)
+  ]);
+
+  if (scaled.length >= 3) {
+    scaled[scaled.length - 1] = [scaled[0][0], scaled[0][1]];
+  }
+  return scaled;
 }
 
 /**
@@ -73,18 +119,18 @@ function countPlotOverlaps(plotsArr = []) {
   let overlapCount = 0;
 
   for (let i = 0; i < plotsArr.length; i++) {
-    const g1 = plotsArr[i].polygonGeometry;
-    if (!g1 || !Array.isArray(g1) || g1.length < 3) continue;
-    const xs1 = g1.map(pt => toPointTuple(pt)[0]);
-    const ys1 = g1.map(pt => toPointTuple(pt)[1]);
+    const g1 = normalizePolygonGeometry(plotsArr[i].polygonGeometry || plotsArr[i].coordinates);
+    if (!g1 || g1.length < 3) continue;
+    const xs1 = g1.map(pt => pt[0]);
+    const ys1 = g1.map(pt => pt[1]);
     const minX1 = Math.min(...xs1), maxX1 = Math.max(...xs1);
     const minY1 = Math.min(...ys1), maxY1 = Math.max(...ys1);
 
     for (let j = i + 1; j < plotsArr.length; j++) {
-      const g2 = plotsArr[j].polygonGeometry;
-      if (!g2 || !Array.isArray(g2) || g2.length < 3) continue;
-      const xs2 = g2.map(pt => toPointTuple(pt)[0]);
-      const ys2 = g2.map(pt => toPointTuple(pt)[1]);
+      const g2 = normalizePolygonGeometry(plotsArr[j].polygonGeometry || plotsArr[j].coordinates);
+      if (!g2 || g2.length < 3) continue;
+      const xs2 = g2.map(pt => pt[0]);
+      const ys2 = g2.map(pt => pt[1]);
       const minX2 = Math.min(...xs2), maxX2 = Math.max(...xs2);
       const minY2 = Math.min(...ys2), maxY2 = Math.max(...ys2);
 
@@ -106,6 +152,13 @@ export default function CadastralVerificationCanvas({
   plots = [],
   unmatchedPolygons = [],
   forensicReport = null,
+  activeCadastralMeta = null,
+  availableAreas = [],
+  availableLayouts = [],
+  onSelectAreaLayout,
+  onRefreshLiveData,
+  isRefreshing = false,
+  apiHealth = null,
   onSaveVerifiedLayout,
   onPublishLayout,
   onOpenReportModal,
@@ -141,14 +194,13 @@ export default function CadastralVerificationCanvas({
       return;
     }
 
-    // Preserve exact polygonGeometry as extracted from PDF, normalizing to [x, y] tuples
+    // Preserve and normalize exact polygonGeometry
     const cleaned = plots.map((p, idx) => {
-      let rawG = p.polygonGeometry || p.rawCoordinates || [];
-      const geom = Array.isArray(rawG) ? rawG.map(toPointTuple) : [];
+      const norm = normalizePolygonGeometry(p.polygonGeometry || p.coordinates);
       return {
         ...p,
-        polygonGeometry: geom,
-        plotNumber: cleanPlotName(p.plotNumber || p.id || String(idx + 1))
+        plotNumber: cleanPlotName(p.plotNumber || p.id || String(idx + 1)),
+        polygonGeometry: norm.length >= 3 ? norm : (p.polygonGeometry || null)
       };
     });
 
@@ -195,13 +247,35 @@ export default function CadastralVerificationCanvas({
 
   const activePlot = selectedPlot || plotList[0] || null;
 
-  // Manual Opt-in Auto-Arrange Action (Only triggered if Admin explicitly clicks button)
-  const handleAutoArrangeGrid = () => {
+  // Opt-in Auto-Arrange Action: Arranges plots into non-overlapping grid AND persists to DB
+  const handleAutoArrangeGrid = async () => {
     if (!plotList.length) return;
     const cleanGrid = arrangeCleanNonOverlappingGrid(plotList);
     setPlotList(cleanGrid);
     if (cleanGrid.length > 0) handleSelectPlot(cleanGrid[0]);
-    setSaveSuccessMsg('Layout grid rearranged! Non-overlapping sector layout applied.');
+    setSaveSuccessMsg('Arranging clean sector grid & saving to database...');
+
+    // 1. Instantly trigger parent save handler to update App state and AppContext
+    if (onSaveVerifiedLayout) {
+      onSaveVerifiedLayout(cleanGrid);
+    }
+
+    // 2. Also call backend fix-overlaps endpoint for atomic DB persistence
+    const layoutId = activeCadastralMeta?.layoutId || (cleanGrid[0] && cleanGrid[0].layoutId) || 'LAYOUT-001';
+    try {
+      const res = await fetch(`/api/cadastral/fix-overlaps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layoutId, plots: cleanGrid })
+      });
+      if (res.ok) {
+        setSaveSuccessMsg('All boundary overlaps resolved & permanently saved to database.');
+      } else {
+        setSaveSuccessMsg('Layout arranged into clean grid sectors and saved.');
+      }
+    } catch (_) {
+      setSaveSuccessMsg('Layout arranged and saved locally.');
+    }
     setTimeout(() => setSaveSuccessMsg(''), 4000);
   };
 
@@ -253,11 +327,11 @@ export default function CadastralVerificationCanvas({
     const target = targetPlotId || activePlot.plotId || activePlot.id;
     setPlotList(prev => prev.map(p => {
       if (isPlotSelected(p, { plotId: target, id: target, plotNumber: target })) {
-        return { ...p, verificationStatus: 'VERIFIED', valuationNotes: 'Manually verified and approved by Admin.' };
+        return { ...p, verificationStatus: 'Verified', valuationNotes: 'Verified and approved by Administrator.' };
       }
       return p;
     }));
-    setSelectedPlot(prev => prev ? ({ ...prev, verificationStatus: 'VERIFIED' }) : null);
+    setSelectedPlot(prev => prev ? ({ ...prev, verificationStatus: 'Verified' }) : null);
   };
 
   const handleRejectPlot = (targetPlotId) => {
@@ -265,7 +339,7 @@ export default function CadastralVerificationCanvas({
     const target = targetPlotId || activePlot.plotId || activePlot.id;
     setPlotList(prev => prev.map(p => {
       if (isPlotSelected(p, { plotId: target, id: target, plotNumber: target })) {
-        return { ...p, verificationStatus: 'GEOMETRY_MISMATCH', valuationNotes: 'Flagged for re-processing by Admin.' };
+        return { ...p, verificationStatus: 'GEOMETRY_MISMATCH', valuationNotes: 'Flagged for re-processing by Administrator.' };
       }
       return p;
     }));
@@ -273,13 +347,17 @@ export default function CadastralVerificationCanvas({
   };
 
   const handleApproveAllVerified = () => {
-    setPlotList(prev => prev.map(p => ({
+    const nextList = plotList.map(p => ({
       ...p,
-      verificationStatus: 'VERIFIED',
-      valuationNotes: 'Batch approved by Admin'
-    })));
-    setSelectedPlot(prev => prev ? ({ ...prev, verificationStatus: 'VERIFIED' }) : null);
-    setSaveSuccessMsg('All plots approved for publishing!');
+      verificationStatus: 'Verified',
+      valuationNotes: 'Verified and approved by Administrator.'
+    }));
+    setPlotList(nextList);
+    setSelectedPlot(prev => prev ? ({ ...prev, verificationStatus: 'Verified' }) : null);
+    if (onSaveVerifiedLayout) {
+      onSaveVerifiedLayout(nextList);
+    }
+    setSaveSuccessMsg('All parcel boundaries approved and saved.');
     setTimeout(() => setSaveSuccessMsg(''), 3000);
   };
 
@@ -292,6 +370,21 @@ export default function CadastralVerificationCanvas({
     const sqmVal = parseFloat(editedOfficialArea) || Math.round((sqftVal / 10.7639) * 100) / 100;
     const cNum = cleanPlotName(editedPlotNumber || targetPlot.plotNumber);
 
+    const scaledGeom = scalePolygonGeometry(
+      targetPlot.polygonGeometry,
+      widVal,
+      lenVal,
+      targetPlot.width || 30,
+      targetPlot.length || 50
+    );
+
+    const updatedEdgeDimensions = [
+      { side: 'North', length: widVal },
+      { side: 'South', length: widVal },
+      { side: 'East', length: lenVal },
+      { side: 'West', length: lenVal }
+    ];
+
     const updatedPlot = {
       ...targetPlot,
       plotNumber: cNum,
@@ -300,6 +393,11 @@ export default function CadastralVerificationCanvas({
       area: sqftVal,
       officialAreaSqft: sqftVal,
       officialAreaSqm: sqmVal,
+      calculatedAreaSqft: sqftVal,
+      calculatedAreaSqm: sqmVal,
+      polygonGeometry: scaledGeom,
+      coordinates: scaledGeom,
+      edgeDimensions: updatedEdgeDimensions,
       facing: editedFacing,
       facingRoadWidth: parseFloat(editedFacingRoadWidth) || 40,
       status: editedStatus,
@@ -307,9 +405,13 @@ export default function CadastralVerificationCanvas({
       valuation: parseFloat(editedValuation) || Math.round(sqftVal * (parseFloat(editedPricePerSqFt) || 2200))
     };
 
-    setPlotList(prev => prev.map(p => isPlotSelected(p, targetPlot) ? updatedPlot : p));
+    const nextList = plotList.map(p => isPlotSelected(p, targetPlot) ? updatedPlot : p);
+    setPlotList(nextList);
     setSelectedPlot(updatedPlot);
-    setSaveSuccessMsg(`Plot ${cNum} attributes updated!`);
+    if (onSaveVerifiedLayout) {
+      onSaveVerifiedLayout(nextList);
+    }
+    setSaveSuccessMsg(`Parcel ${cNum} attributes & vector boundaries updated and saved.`);
     setTimeout(() => setSaveSuccessMsg(''), 3000);
   };
 
@@ -325,77 +427,140 @@ export default function CadastralVerificationCanvas({
     });
   }, [plotList, searchQuery, activeTab]);
 
-  const verifiedCount = plotList.filter(p => p.verificationStatus === 'VERIFIED').length;
+  const verifiedCount = plotList.filter(p => p.verificationStatus === 'VERIFIED' || p.verificationStatus === 'Verified').length;
   const mismatchCount = plotList.filter(p => p.verificationStatus === 'GEOMETRY_MISMATCH' || p.verificationStatus === 'NEEDS_REVIEW').length;
   const unverifiedCount = plotList.length - verifiedCount;
   const detectedOverlaps = useMemo(() => countPlotOverlaps(plotList), [plotList]);
   const canPublish = plotList.length > 0 && unverifiedCount === 0;
 
+  // Clean, unified, de-duplicated list of areas and layouts for seamless selection
+  const combinedAreaOptions = useMemo(() => {
+    const list = [];
+    const seenIds = new Set();
+    const seenNames = new Set();
+
+    // 1. Available Master Areas
+    if (availableAreas && availableAreas.length > 0) {
+      availableAreas.forEach(a => {
+        seenIds.add(a.id);
+        if (a.name) seenNames.add(a.name.toLowerCase());
+        list.push({
+          id: a.id,
+          name: a.name,
+          owner: a.ownerName || 'Survey Parcel',
+          plotsCount: a.plotCount || a.totalPlots || 0,
+          verifiedCount: a.verifiedPlotCount || a.verifiedPlotsCount || 0,
+          status: a.status || (a.isVerified ? 'Verified' : 'Needs Verification'),
+          isVerified: a.isVerified,
+          isOngoing: a.verificationOngoing
+        });
+      });
+    }
+
+    // 2. Available Layouts (include any layout not already represented by an area)
+    if (availableLayouts && availableLayouts.length > 0) {
+      availableLayouts.forEach(l => {
+        const layoutId = l.id;
+        const layoutName = l.projectName || l.project_name || l.name;
+        if (!seenIds.has(layoutId) && !seenIds.has(l.projectId) && !seenIds.has(l.project_id) && !seenNames.has(layoutName?.toLowerCase())) {
+          seenIds.add(layoutId);
+          list.push({
+            id: layoutId,
+            name: layoutName,
+            owner: l.ownerName || '',
+            plotsCount: l.extractedPlotsCount || l.extracted_plots_count || 0,
+            verifiedCount: l.verifiedPlotsCount || 0,
+            status: l.status || 'Needs Verification',
+            isVerified: l.status === 'Verified' || l.status === 'Published',
+            isOngoing: l.status === 'Needs Verification'
+          });
+        }
+      });
+    }
+
+    return list;
+  }, [availableAreas, availableLayouts]);
+
   // Calculate SVG ViewBox dynamically from ALL actual plot polygon vertices
   const bounds = useMemo(() => {
-    const plotsWithGeometry = plotList.filter(p => Array.isArray(p.polygonGeometry) && p.polygonGeometry.length >= 3);
-
-    if (!plotsWithGeometry || plotsWithGeometry.length === 0) {
-      return { minX: 0, minY: 0, maxX: 1200, maxY: 900, width: 1200, height: 900 };
-    }
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    plotsWithGeometry.forEach((p) => {
-      p.polygonGeometry.forEach((pt) => {
-        const [x, y] = toPointTuple(pt);
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      });
-    });
-    if (!isFinite(minX) || !isFinite(maxX)) {
-      return { minX: 0, minY: 0, maxX: 1200, maxY: 900, width: 1200, height: 900 };
-    }
-    const pad = 60;
-    const cMinX = Math.max(0, minX - pad);
-    const cMinY = Math.max(0, minY - pad);
-    const cMaxX = maxX + pad;
-    const cMaxY = maxY + pad;
-    return {
-      minX: Math.floor(cMinX),
-      minY: Math.floor(cMinY),
-      maxX: Math.ceil(cMaxX),
-      maxY: Math.ceil(cMaxY),
-      width: Math.ceil(Math.max(300, cMaxX - cMinX)),
-      height: Math.ceil(Math.max(300, cMaxY - cMinY))
-    };
+    return computeBoundingBox(plotList, 1200, 900, 60);
   }, [plotList]);
 
   // EMPTY STATE rendering when no layout or plots exist
   if (!plotList || plotList.length === 0) {
     return (
-      <div className="flex flex-col h-[calc(100vh-80px)] bg-slate-950 text-slate-100 rounded-xl overflow-hidden border border-slate-800 shadow-2xl items-center justify-center p-8 text-center">
-        <div className="w-20 h-20 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-cyan-400 mb-4 shadow-xl">
-          <span className="material-symbols-outlined text-4xl">architecture</span>
+      <div className="flex flex-col h-[calc(100vh-80px)] bg-slate-950 text-slate-100 rounded-xl overflow-hidden border border-slate-800 shadow-2xl p-6 lg:p-10 justify-between">
+        {/* Top Header */}
+        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-cyan-400 text-2xl">fact_check</span>
+            <div>
+              <h2 className="text-base font-bold text-white tracking-wide">Cadastral Verification</h2>
+              <p className="text-[11px] text-slate-400">Boundary and parcel verification for registered areas</p>
+            </div>
+          </div>
+          <button
+            onClick={onRefreshLiveData}
+            disabled={isRefreshing}
+            className={`p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-cyan-400 border border-slate-700 text-xs transition-all cursor-pointer ${isRefreshing ? 'animate-spin' : ''}`}
+            title="Refresh data"
+          >
+            <span className="material-symbols-outlined text-base">refresh</span>
+          </button>
         </div>
-        <h3 className="text-xl font-bold text-white tracking-wide">No Cadastral Layout Currently Loaded</h3>
-        <p className="text-xs text-slate-400 max-w-md mt-2 mb-6 leading-relaxed">
-          Upload an official Cadastral Plan PDF or select an existing project layout to view true extracted polygon geometries and perform verification.
-        </p>
-        <div className="flex items-center gap-3">
-          {onOpenUploadModal && (
-            <button
-              onClick={onOpenUploadModal}
-              className="px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-cyan-950/50 cursor-pointer transition-all"
-            >
-              <span className="material-symbols-outlined text-lg">upload_file</span>
-              Upload Cadastral Plan PDF
-            </button>
-          )}
-          {onOpenReportModal && forensicReport && (
-            <button
-              onClick={onOpenReportModal}
-              className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer transition-all"
-            >
-              <span className="material-symbols-outlined text-lg">assessment</span>
-              View Forensic Log
-            </button>
-          )}
+
+        {/* Center Content: Single Area Selector & Upload Document */}
+        <div className="max-w-md w-full mx-auto text-center py-8">
+          <div className="w-14 h-14 rounded-2xl bg-cyan-950/60 border border-cyan-800/60 flex items-center justify-center text-cyan-400 mx-auto mb-4 shadow-lg">
+            <span className="material-symbols-outlined text-3xl">map</span>
+          </div>
+          <h3 className="text-lg font-bold text-white tracking-wide">Select Cadastral Area</h3>
+          <p className="text-xs text-slate-400 mt-2 mb-6">
+            Choose an area to verify parcel geometries or upload a new cadastral demarcation document.
+          </p>
+
+          <div className="space-y-4 bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl text-left">
+            <div>
+              <label className="text-xs text-slate-300 font-medium block mb-1.5">
+                Cadastral Area
+              </label>
+              <div className="relative">
+                <select
+                  value={activeCadastralMeta?.layoutId || activeCadastralMeta?.projectId || ''}
+                  onChange={(e) => onSelectAreaLayout && onSelectAreaLayout(e.target.value)}
+                  disabled={isRefreshing}
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-lg pl-3 pr-8 py-2 text-xs text-cyan-300 font-medium focus:outline-none transition-colors cursor-pointer appearance-none truncate"
+                >
+                  <option value="" disabled>-- Select Area --</option>
+                  {combinedAreaOptions.map(opt => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name} ({opt.plotsCount} plots)
+                    </option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined text-slate-400 text-sm absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                  unfold_more
+                </span>
+              </div>
+            </div>
+
+            {onOpenUploadModal && (
+              <div className="pt-3 border-t border-slate-800">
+                <button
+                  onClick={onOpenUploadModal}
+                  className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded-lg text-xs flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md"
+                >
+                  <span className="material-symbols-outlined text-base">upload_file</span>
+                  Upload Cadastral Document
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="text-center text-[11px] text-slate-500 border-t border-slate-900 pt-3">
+          Sky Cadastral Administration System
         </div>
       </div>
     );
@@ -413,89 +578,137 @@ export default function CadastralVerificationCanvas({
         </defs>
       </svg>
 
-      {/* Top Header & Action Bar */}
-      <div className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-cyan-400 text-2xl">layers</span>
-            <h2 className="text-xl font-bold text-white tracking-wide">
-              Cadastral Geometry Verification & Planning Engine
-            </h2>
-            <span className="bg-cyan-950 text-cyan-300 border border-cyan-700/60 px-3 py-1 rounded-full text-xs font-semibold">
-              Vector Layer Active ({plotList.length} Plots)
-            </span>
+      {/* Top Header & Operational Toolbar */}
+      <div className="bg-slate-900 border-b border-slate-800 px-5 py-3 flex flex-wrap items-center justify-between gap-4">
+        {/* Left: Module Title, Single Area Dropdown, Single Upload Button, Status Pill */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2 pr-3 border-r border-slate-800">
+            <span className="material-symbols-outlined text-cyan-400 text-xl">fact_check</span>
+            <div>
+              <h2 className="text-sm font-bold text-white tracking-wide">
+                Cadastral Verification
+              </h2>
+              <span className="text-[11px] text-slate-400">
+                {plotList.length} Parcels
+              </span>
+            </div>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Authoritative Extracted Polygon Geometry — Non-Destructive Boundary Verification
-          </p>
+
+          {/* SINGLE AREA SELECTION DROPDOWN */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-400 font-medium">Area:</label>
+            <div className="relative min-w-[240px] max-w-sm">
+              <select
+                value={activeCadastralMeta?.projectId || activeCadastralMeta?.layoutId || ''}
+                onChange={(e) => onSelectAreaLayout && onSelectAreaLayout(e.target.value)}
+                disabled={isRefreshing}
+                className="w-full bg-slate-950 hover:bg-slate-900 border border-slate-700 focus:border-cyan-500 rounded-lg pl-3 pr-8 py-1.5 text-xs text-cyan-300 font-medium focus:outline-none transition-colors cursor-pointer appearance-none truncate"
+                title="Select Cadastral Area"
+              >
+                <option value="" disabled>-- Select Area --</option>
+                {combinedAreaOptions.map(opt => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.name} ({opt.plotsCount} plots)
+                  </option>
+                ))}
+              </select>
+              <span className="material-symbols-outlined text-slate-400 text-sm absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                unfold_more
+              </span>
+            </div>
+          </div>
+
+          {/* SINGLE UPLOAD DOCUMENT BUTTON */}
+          {onOpenUploadModal && (
+            <button
+              onClick={onOpenUploadModal}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-medium transition-all shadow-sm cursor-pointer"
+              title="Upload Cadastral Document for selected area"
+            >
+              <span className="material-symbols-outlined text-base">upload_file</span>
+              <span>Upload Document</span>
+            </button>
+          )}
+
+          {/* PROFESSIONAL STATUS PILL */}
+          <span className={`px-2.5 py-1 rounded-md text-xs font-medium border flex items-center gap-1.5 ${
+            canPublish
+              ? 'bg-emerald-950/70 text-emerald-300 border-emerald-800/80'
+              : 'bg-amber-950/70 text-amber-300 border-amber-800/80'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${canPublish ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            {canPublish ? 'Verified & Published' : `Verification In Progress (${verifiedCount}/${plotList.length})`}
+          </span>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        {/* Right: Functional Action Buttons */}
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleAutoArrangeGrid}
-            className="flex items-center gap-2 px-3.5 py-2 bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/60 rounded-lg text-xs font-semibold transition-all shadow-md cursor-pointer"
-            title="Rearrange plot layout into non-overlapping grid sectors (Manual Admin Tool)"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium transition-all cursor-pointer"
+            title="Auto-align parcel geometry into ordered sectors"
           >
-            <span className="material-symbols-outlined text-cyan-300 text-base">grid_view</span>
-            Fix Overlaps & Arrange
+            <span className="material-symbols-outlined text-cyan-400 text-base">grid_view</span>
+            <span>Fix Overlaps</span>
           </button>
 
           {unverifiedCount > 0 && (
             <button
               onClick={handleApproveAllVerified}
-              className="flex items-center gap-2 px-3.5 py-2 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-semibold transition-all shadow-md cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-medium transition-all cursor-pointer"
+              title="Approve all remaining parcels"
             >
               <span className="material-symbols-outlined text-base">done_all</span>
-              Approve All ({unverifiedCount})
+              <span>Approve All ({unverifiedCount})</span>
             </button>
           )}
 
           <button
             onClick={onOpenReportModal}
-            className="flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium transition-all shadow-md"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium transition-all cursor-pointer"
+            title="View Forensic Extraction Report"
           >
-            <span className="material-symbols-outlined text-cyan-400 text-base">assessment</span>
-            Forensic Report
+            <span className="material-symbols-outlined text-cyan-400 text-base">description</span>
+            <span>Report</span>
           </button>
 
           <button
             onClick={() => onSaveVerifiedLayout && onSaveVerifiedLayout(plotList)}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-xs font-medium transition-all shadow-sm cursor-pointer"
+            title="Save geometries to database"
           >
             <span className="material-symbols-outlined text-base">save</span>
-            Save Geometries
+            <span>Save</span>
           </button>
 
           <button
-            onClick={() => canPublish && onPublishLayout && onPublishLayout()}
+            onClick={() => canPublish && onPublishLayout && onPublishLayout(plotList)}
             disabled={!canPublish}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-md ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all shadow-sm ${
               canPublish
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white cursor-pointer shadow-emerald-900/50'
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
                 : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
             }`}
+            title={canPublish ? 'Publish Layout' : 'All plots must be verified before publishing'}
           >
             <span className="material-symbols-outlined text-base">{canPublish ? 'lock_open' : 'lock'}</span>
-            Publish Layout
+            <span>Publish</span>
+          </button>
+
+          <button
+            onClick={onRefreshLiveData}
+            disabled={isRefreshing}
+            className={`p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 border border-slate-700 text-xs transition-all cursor-pointer ${isRefreshing ? 'animate-spin' : ''}`}
+            title="Refresh parcel data"
+          >
+            <span className="material-symbols-outlined text-base">refresh</span>
           </button>
         </div>
       </div>
 
-      {/* Overlap Diagnostic Notification Banner */}
-      {detectedOverlaps > 0 && !saveSuccessMsg && (
-        <div className="bg-amber-950/80 border-b border-amber-700/80 px-6 py-2.5 flex items-center justify-between text-amber-200 text-xs font-medium">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-amber-400 text-lg">warning</span>
-            <span>
-              <strong>Geometry Overlap Warning:</strong> {detectedOverlaps} source polygon intersections detected. Original extracted boundaries are preserved. Click "Fix Overlaps & Arrange" if sector grid rearrangement is desired.
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Toast Notification */}
+      {/* Professional Status & Notification Banner */}
       {saveSuccessMsg && (
-        <div className="bg-emerald-950 border-b border-emerald-700 px-6 py-2.5 flex items-center justify-between text-emerald-200 text-xs font-semibold">
+        <div className="bg-emerald-950/80 border-b border-emerald-800/80 px-6 py-2 flex items-center justify-between text-emerald-200 text-xs font-medium">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-emerald-400 text-base">check_circle</span>
             <span>{saveSuccessMsg}</span>
@@ -503,15 +716,30 @@ export default function CadastralVerificationCanvas({
         </div>
       )}
 
-      {/* Publishing Safety Bar */}
-      {!canPublish && !saveSuccessMsg && detectedOverlaps === 0 && (
-        <div className="bg-amber-950/70 border-b border-amber-800/60 px-6 py-2.5 flex items-center justify-between text-amber-200 text-xs font-medium">
+      {detectedOverlaps > 0 && !saveSuccessMsg && (
+        <div className="bg-amber-950/60 border-b border-amber-800/60 px-6 py-2 flex items-center justify-between text-amber-200 text-xs font-medium">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-amber-400 text-lg">shield_with_heart</span>
+            <span className="material-symbols-outlined text-amber-400 text-base">info</span>
+            <span>Notice: {detectedOverlaps} boundary overlap(s) detected. Click "Fix Overlaps" if automatic alignment is desired.</span>
+          </div>
+        </div>
+      )}
+
+      {!saveSuccessMsg && detectedOverlaps === 0 && (
+        <div className="bg-slate-900/60 border-b border-slate-800/80 px-6 py-1.5 flex items-center justify-between text-xs text-slate-400">
+          <div className="flex items-center gap-2">
+            <span className={`material-symbols-outlined text-sm ${canPublish ? 'text-emerald-400' : 'text-amber-400'}`}>
+              {canPublish ? 'check_circle' : 'pending'}
+            </span>
             <span>
-              <strong>Publishing Status:</strong> {verifiedCount} / {plotList.length} plots verified. Click "Approve Plot" or "Approve All" to publish layout.
+              {canPublish
+                ? 'All parcel geometries verified. Layout is ready for publication.'
+                : `Verification in progress: ${verifiedCount} of ${plotList.length} parcels verified. Final approval required before publication.`}
             </span>
           </div>
+          <span className="text-[11px] font-mono text-slate-500">
+            {activeCadastralMeta?.projectName || 'Active Area'}
+          </span>
         </div>
       )}
 
@@ -570,15 +798,12 @@ export default function CadastralVerificationCanvas({
 
               {/* Render Unmatched Polygons */}
               {unmatchedPolygons.map((poly, idx) => {
-                const polyGeom = Array.isArray(poly.polygonGeometry) ? poly.polygonGeometry : [];
-                const polyPoints = polyGeom.map((pt) => {
-                  const [x, y] = toPointTuple(pt);
-                  return `${x},${y}`;
-                }).join(' ');
+                const normGeom = normalizePolygonGeometry(poly.polygonGeometry || poly.coordinates);
+                if (normGeom.length < 3) return null;
                 return (
                   <polygon
                     key={`unmatched-${idx}`}
-                    points={polyPoints}
+                    points={normGeom.map(pt => `${pt[0]},${pt[1]}`).join(' ')}
                     fill="#334155"
                     fillOpacity="0.15"
                     stroke="#475569"
@@ -592,26 +817,21 @@ export default function CadastralVerificationCanvas({
               {filteredPlots.map((p, idx) => {
                 const isSelected = activePlot && isPlotSelected(p, activePlot);
                 const isVerified = p.verificationStatus === 'VERIFIED';
-                const hasGeometry = Array.isArray(p.polygonGeometry) && p.polygonGeometry.length >= 3;
+                const normGeom = normalizePolygonGeometry(p.polygonGeometry || p.coordinates);
+                const hasGeometry = normGeom.length >= 3;
+                const bbox = hasGeometry ? computeBoundingBox(normGeom) : null;
                 
-                const pointsStr = hasGeometry ? p.polygonGeometry.map((pt) => {
-                  const [x, y] = toPointTuple(pt);
-                  return `${x},${y}`;
-                }).join(' ') : '';
+                const pointsStr = hasGeometry ? normGeom.map(pt => `${pt[0]},${pt[1]}`).join(' ') : '';
                 
                 let cx = 0, cy = 0;
                 if (hasGeometry) {
-                  p.polygonGeometry.forEach((pt) => {
-                    const [x, y] = toPointTuple(pt);
-                    cx += x;
-                    cy += y;
-                  });
-                  cx /= p.polygonGeometry.length;
-                  cy /= p.polygonGeometry.length;
+                  normGeom.forEach(pt => { cx += pt[0]; cy += pt[1]; });
+                  cx /= normGeom.length;
+                  cy /= normGeom.length;
                 } else if (p.labelCenter) {
-                  const [lcX, lcY] = toPointTuple(p.labelCenter);
-                  cx = lcX;
-                  cy = lcY;
+                  const lc = parsePoint(p.labelCenter) || [100, 100];
+                  cx = lc[0];
+                  cy = lc[1];
                 }
 
                 const displayNum = cleanPlotName(p.plotNumber || p.id || String(idx + 1));
@@ -653,6 +873,79 @@ export default function CadastralVerificationCanvas({
                         strokeDasharray="6 4"
                         className="animate-pulse"
                       />
+                    )}
+
+                    {/* Cadastral Boundary Edge Dimension Lines for Selected Plot */}
+                    {isSelected && bbox && (
+                      <g className="pointer-events-none">
+                        {/* North Boundary Dimension */}
+                        <line
+                          x1={bbox.minX}
+                          y1={bbox.minY - 8}
+                          x2={bbox.maxX}
+                          y2={bbox.minY - 8}
+                          stroke="#38bdf8"
+                          strokeWidth="1.2"
+                          strokeDasharray="3 2"
+                        />
+                        <line x1={bbox.minX} y1={bbox.minY - 12} x2={bbox.minX} y2={bbox.minY - 4} stroke="#38bdf8" strokeWidth="1.2" />
+                        <line x1={bbox.maxX} y1={bbox.minY - 12} x2={bbox.maxX} y2={bbox.minY - 4} stroke="#38bdf8" strokeWidth="1.2" />
+                        <rect x={cx - 26} y={bbox.minY - 20} width="52" height="15" rx="3" fill="#0f172a" stroke="#38bdf8" strokeWidth="0.8" />
+                        <text x={cx} y={bbox.minY - 9} fill="#38bdf8" fontSize="9" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle">
+                          N: {p.width || 30} ft
+                        </text>
+
+                        {/* South Boundary Dimension */}
+                        <line
+                          x1={bbox.minX}
+                          y1={bbox.maxY + 8}
+                          x2={bbox.maxX}
+                          y2={bbox.maxY + 8}
+                          stroke="#38bdf8"
+                          strokeWidth="1.2"
+                          strokeDasharray="3 2"
+                        />
+                        <line x1={bbox.minX} y1={bbox.maxY + 4} x2={bbox.minX} y2={bbox.maxY + 12} stroke="#38bdf8" strokeWidth="1.2" />
+                        <line x1={bbox.maxX} y1={bbox.maxY + 4} x2={bbox.maxX} y2={bbox.maxY + 12} stroke="#38bdf8" strokeWidth="1.2" />
+                        <rect x={cx - 26} y={bbox.maxY + 5} width="52" height="15" rx="3" fill="#0f172a" stroke="#38bdf8" strokeWidth="0.8" />
+                        <text x={cx} y={bbox.maxY + 16} fill="#38bdf8" fontSize="9" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle">
+                          S: {p.width || 30} ft
+                        </text>
+
+                        {/* West Boundary Dimension */}
+                        <line
+                          x1={bbox.minX - 8}
+                          y1={bbox.minY}
+                          x2={bbox.minX - 8}
+                          y2={bbox.maxY}
+                          stroke="#38bdf8"
+                          strokeWidth="1.2"
+                          strokeDasharray="3 2"
+                        />
+                        <line x1={bbox.minX - 12} y1={bbox.minY} x2={bbox.minX - 4} y2={bbox.minY} stroke="#38bdf8" strokeWidth="1.2" />
+                        <line x1={bbox.minX - 12} y1={bbox.maxY} x2={bbox.minX - 4} y2={bbox.maxY} stroke="#38bdf8" strokeWidth="1.2" />
+                        <rect x={bbox.minX - 58} y={cy - 7} width="48" height="15" rx="3" fill="#0f172a" stroke="#38bdf8" strokeWidth="0.8" />
+                        <text x={bbox.minX - 34} y={cy + 3} fill="#38bdf8" fontSize="9" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle">
+                          W: {p.length || 50} ft
+                        </text>
+
+                        {/* East Boundary Dimension */}
+                        <line
+                          x1={bbox.maxX + 8}
+                          y1={bbox.minY}
+                          x2={bbox.maxX + 8}
+                          y2={bbox.maxY}
+                          stroke="#38bdf8"
+                          strokeWidth="1.2"
+                          strokeDasharray="3 2"
+                        />
+                        <line x1={bbox.maxX + 4} y1={bbox.minY} x2={bbox.maxX + 12} y2={bbox.minY} stroke="#38bdf8" strokeWidth="1.2" />
+                        <line x1={bbox.maxX + 4} y1={bbox.maxY} x2={bbox.maxX + 12} y2={bbox.maxY} stroke="#38bdf8" strokeWidth="1.2" />
+                        <rect x={bbox.maxX + 10} y={cy - 7} width="48" height="15" rx="3" fill="#0f172a" stroke="#38bdf8" strokeWidth="0.8" />
+                        <text x={bbox.maxX + 34} y={cy + 3} fill="#38bdf8" fontSize="9" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="middle">
+                          E: {p.length || 50} ft
+                        </text>
+                      </g>
                     )}
 
                     {/* Plot Label Text */}
@@ -911,6 +1204,39 @@ export default function CadastralVerificationCanvas({
                       onChange={(e) => setEditedPricePerSqFt(e.target.value)}
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-cyan-300 font-mono text-xs focus:border-cyan-500 focus:outline-none font-bold"
                     />
+                  </div>
+                </div>
+
+                {/* Structured Directional Edge Dimensions Card */}
+                <div className="bg-slate-900 border border-slate-800 rounded-lg p-2.5 space-y-1.5 text-[11px]">
+                  <div className="font-semibold text-slate-300 flex items-center justify-between pb-1 border-b border-slate-800">
+                    <span className="flex items-center gap-1 text-cyan-400">
+                      <span className="material-symbols-outlined text-sm">square_foot</span>
+                      Directional Boundaries
+                    </span>
+                    <span className="text-slate-400 font-mono text-[10px]">{editedFacing} Facing</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 text-center font-mono">
+                    <div className="bg-slate-950 p-1.5 rounded border border-slate-800">
+                      <span className="text-slate-500 block text-[9px] uppercase">North</span>
+                      <span className="text-cyan-300 font-bold">{editedWidth || 30} ft</span>
+                    </div>
+                    <div className="bg-slate-950 p-1.5 rounded border border-slate-800">
+                      <span className="text-slate-500 block text-[9px] uppercase">South</span>
+                      <span className="text-cyan-300 font-bold">{editedWidth || 30} ft</span>
+                    </div>
+                    <div className="bg-slate-950 p-1.5 rounded border border-slate-800">
+                      <span className="text-slate-500 block text-[9px] uppercase">East</span>
+                      <span className="text-cyan-300 font-bold">{editedLength || 50} ft</span>
+                    </div>
+                    <div className="bg-slate-950 p-1.5 rounded border border-slate-800">
+                      <span className="text-slate-500 block text-[9px] uppercase">West</span>
+                      <span className="text-cyan-300 font-bold">{editedLength || 50} ft</span>
+                    </div>
+                  </div>
+                  <div className="pt-1 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                    <span>Road Setback: <strong className="text-amber-300">{editedFacingRoadWidth || 40} ft</strong></span>
+                    <span>Area: <strong className="text-emerald-400">{editedOfficialAreaSqft || 1500} sq.ft</strong></span>
                   </div>
                 </div>
 

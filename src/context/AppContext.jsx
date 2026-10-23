@@ -10,15 +10,19 @@ import {
   OFFICIAL_LETTERHEAD_CONFIG,
   INITIAL_AREAS
 } from '../data/mockData';
+import { normalizePolygonGeometry } from '../utils/geometryUtils';
 
 // Utility helper to calculate exact polygon area using Shoelace formula
 export function calculatePolygonArea(coordinates) {
-  if (!coordinates || coordinates.length < 3) return 0;
+  const norm = normalizePolygonGeometry(coordinates);
+  if (!norm || norm.length < 3) return 0;
   let area = 0;
-  const n = coordinates.length;
+  const n = norm.length;
   for (let i = 0; i < n; i++) {
-    const [x1, y1] = coordinates[i];
-    const [x2, y2] = coordinates[(i + 1) % n];
+    const x1 = norm[i][0];
+    const y1 = norm[i][1];
+    const x2 = norm[(i + 1) % n][0];
+    const y2 = norm[(i + 1) % n][1];
     area += x1 * y2 - x2 * y1;
   }
   return Math.round(Math.abs(area / 2));
@@ -124,34 +128,35 @@ export function AppProvider({ children }) {
   });
 
   const LIVE_API_BASE = 'https://sky-cadastral.onrender.com/api';
-  const RENDER_API_BASE = LIVE_API_BASE;
-  const PRIMARY_API_BASE = import.meta.env.VITE_API_BASE_URL || LIVE_API_BASE;
+  const PRIMARY_API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '/api' : LIVE_API_BASE);
   const API_BASE = PRIMARY_API_BASE;
 
   const safeApiFetch = async (endpoint, options = {}) => {
-    // 1. Try PRIMARY_API_BASE (Live backend)
+    // 1. Try PRIMARY_API_BASE
     try {
       const res = await fetch(`${PRIMARY_API_BASE}${endpoint}`, options);
       if (res.ok) return res;
     } catch (e) {
-      // Live backend offline
+      // Primary backend offline
     }
 
-    // 2. Fallback to /api proxy
-    try {
-      const res = await fetch(`/api${endpoint}`, options);
-      if (res.ok) return res;
-    } catch (e) {
-      // Proxy offline
-    }
-
-    // 3. Try RENDER_API_BASE if not PRIMARY
-    if (PRIMARY_API_BASE !== RENDER_API_BASE) {
+    // 2. Fallback to /api proxy only in local development if PRIMARY_API_BASE isn't already /api
+    if (import.meta.env.DEV && PRIMARY_API_BASE !== '/api') {
       try {
-        const res = await fetch(`${RENDER_API_BASE}${endpoint}`, options);
+        const res = await fetch(`/api${endpoint}`, options);
         if (res.ok) return res;
       } catch (e) {
-        // Render backend offline
+        // Dev proxy offline
+      }
+    }
+
+    // 3. Fallback directly to localhost:5000 in dev
+    if (import.meta.env.DEV) {
+      try {
+        const res = await fetch(`http://localhost:5000/api${endpoint}`, options);
+        if (res.ok) return res;
+      } catch (e) {
+        // Localhost offline
       }
     }
 
@@ -375,6 +380,17 @@ export function AppProvider({ children }) {
 
     logActivity('Updated Polygon Geometry', plots.find(p => p.id === plotId)?.plotNumber || 'Plot', `${newCoordinates.length} Vertices`, 'polyline', 'update');
     showToast('Plot polygon geometry & vertex boundaries updated and synchronized with Neon DB!');
+  };
+
+  const updateBulkPlots = (updatedPlots) => {
+    if (!updatedPlots || !Array.isArray(updatedPlots) || updatedPlots.length === 0) return;
+    setPlots((prev) => {
+      const updatedIds = new Set(updatedPlots.map((p) => p.id || p.plotNumber));
+      const filteredPrev = prev.filter((p) => !updatedIds.has(p.id) && !updatedIds.has(p.plotNumber));
+      const nextList = [...updatedPlots, ...filteredPrev];
+      localStorage.setItem('sky_cadastral_plots', JSON.stringify(nextList));
+      return nextList;
+    });
   };
 
   useEffect(() => {
@@ -1049,6 +1065,8 @@ export function AppProvider({ children }) {
 
         // Data
         plots,
+        setPlots,
+        updateBulkPlots,
         layouts,
         setLayouts,
         activeLayoutId,

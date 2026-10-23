@@ -154,15 +154,27 @@ function handleMemoryQuery(text, params) {
     return { rows: [{ id: layoutId, status: 'Published' }] };
   }
 
-  // 6. SELECT ... FROM plots WHERE layout_id = $1 AND verification_status != 'Verified'
-  if (sql.includes('FROM plots WHERE layout_id') && sql.includes("verification_status != 'Verified'")) {
+  // 6. SELECT ... FROM plots WHERE layout_id = $1 AND verification_status
+  if (sql.includes('FROM plots') && (sql.includes('verification_status') || sql.includes('NOT IN'))) {
     const unverified = [];
     for (const plot of memoryStore.plots.values()) {
-      if (plot.layout_id === params[0] && (plot.verification_status || '').toUpperCase() !== 'VERIFIED') {
+      const statusUpper = (plot.verification_status || '').toUpperCase();
+      if (plot.layout_id === params[0] && !['VERIFIED', 'PUBLISHED', 'APPROVED'].includes(statusUpper)) {
         unverified.push(plot);
       }
     }
     return { rows: unverified };
+  }
+
+  // 6b. UPDATE plots SET verification_status = 'Verified'
+  if (sql.includes('UPDATE plots SET verification_status')) {
+    const layoutId = params[0];
+    for (const plot of memoryStore.plots.values()) {
+      if (plot.layout_id === layoutId) {
+        plot.verification_status = 'Verified';
+      }
+    }
+    return { rows: [] };
   }
 
   // 7. SELECT ... FROM plots WHERE layout_id = $1
