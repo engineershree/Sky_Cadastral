@@ -15,7 +15,7 @@ export default function Map2DView({ onOpenBookingModal }) {
   } = useApp();
 
   const currentLayout = layouts.find((l) => l.id === activeLayoutId) || layouts[0];
-  const layoutPlots = plots.filter((p) => p.layoutId ? p.layoutId === currentLayout?.id : currentLayout?.id === layouts[0]?.id);
+  const layoutPlots = (plots || []).filter((p) => p && currentLayout?.id && p.layoutId === currentLayout.id);
 
   const [selectedPlotMap, setSelectedPlotMap] = useState(layoutPlots[0] || plots[0] || null);
 

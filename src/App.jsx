@@ -748,7 +748,7 @@ function MainAppContent() {
 
           {activeModule === 'Cadastral Verification' && (
             <CadastralVerificationCanvas
-              plots={cadastralPlots.length > 0 ? cadastralPlots : plots.filter(p => p.layoutId ? p.layoutId === (activeLayoutId || layouts?.[0]?.id || 'LAYOUT-001') : true)}
+              plots={cadastralPlots.length > 0 ? cadastralPlots : (plots || []).filter(p => p && p.layoutId === (activeLayoutId || layouts?.[0]?.id || 'LAYOUT-001'))}
               unmatchedPolygons={unmatchedPolygons}
               forensicReport={currentForensicReport}
               activeCadastralMeta={activeCadastralMeta}

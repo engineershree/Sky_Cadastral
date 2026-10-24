@@ -393,12 +393,32 @@ app.post('/api/layouts/upload', upload.single('pdfFile'), async (req, res) => {
     let pdfBuffer;
 
     if (req.file) {
+      if (!req.file.buffer || req.file.buffer.length < 50) {
+        return res.status(400).json({ success: false, error: 'Uploaded file is empty or corrupted (size < 50 bytes).' });
+      }
+      const headerStr = req.file.buffer.subarray(0, 64).toString('latin1');
+      if (!headerStr.includes('%PDF-')) {
+        return res.status(400).json({ success: false, error: 'Uploaded file is not a valid PDF document (missing %PDF- header).' });
+      }
       pdfBuffer = req.file.buffer;
     } else if (req.body.pdfPath) {
-      pdfBuffer = req.body.pdfPath;
+      // Path traversal security guard: strictly sanitize and confine to allowed project PDF files
+      const rawPath = String(req.body.pdfPath).trim();
+      if (/[\0\r\n]/.test(rawPath) || rawPath.startsWith('-')) {
+        return res.status(400).json({ success: false, error: 'Security Error: Illegal characters or flags in pdfPath.' });
+      }
+      const safeBasename = path.basename(rawPath);
+      if (!safeBasename.toLowerCase().endsWith('.pdf')) {
+        return res.status(400).json({ success: false, error: `Security Error: Invalid file type "${path.extname(safeBasename)}". Expected .pdf` });
+      }
+      const safePath = path.join(__dirname, safeBasename);
+      if (!fs.existsSync(safePath) || !fs.statSync(safePath).isFile()) {
+        return res.status(400).json({ success: false, error: 'Security Error: Specified pdfPath file does not exist in authorized directories.' });
+      }
+      pdfBuffer = safePath;
     } else {
       // Use generated sample layout PDF if no file uploaded in body
-      pdfBuffer = './sample_cadastral_layout.pdf';
+      pdfBuffer = path.join(__dirname, 'sample_cadastral_layout.pdf');
     }
 
     // 1. Run Real PDF Parsing & Vector/OCR Extraction
@@ -406,7 +426,7 @@ app.post('/api/layouts/upload', upload.single('pdfFile'), async (req, res) => {
 
     const layoutId = `LAYOUT-${Date.now()}`;
     const name = layoutName || req.file?.originalname || 'Master Demarcation PDF';
-    const pdfFileName = req.file?.originalname || 'sample_cadastral_layout.pdf';
+    const pdfFileName = req.file?.originalname || (typeof pdfBuffer === 'string' ? path.basename(pdfBuffer) : 'sample_cadastral_layout.pdf');
     const fileSizeStr = req.file ? `${(req.file.size / (1024 * 1024)).toFixed(1)} MB` : '2.4 MB';
 
     // 2. Insert Layout Record into Neon DB
@@ -459,8 +479,13 @@ app.post('/api/layouts/upload', upload.single('pdfFile'), async (req, res) => {
       extractedPlots: insertedPlots
     });
   } catch (err) {
-    console.error('❌ PDF Upload/Parsing Error:', err);
-    res.status(500).json({ error: err.message, stack: err.stack });
+    console.error('❌ PDF Upload/Parsing Error:', err.message);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      category: 'UPLOAD_ERROR',
+      ...(process.env.NODE_ENV === 'development' ? { stack: err.stack } : {})
+    });
   }
 });
 
@@ -552,20 +577,25 @@ app.post('/api/cadastral/parse-pdf', parseCadastralUpload, async (req, res) => {
       }
     }
 
-    // 4. Server-side path reference (for internal migration / tests)
+    // 4. Server-side path reference (strictly confined to safe local PDF assets)
     if (!pdfInput && typeof req.body?.pdfPath === 'string' && req.body.pdfPath.trim()) {
-      const candidatePaths = [
-        req.body.pdfPath,
-        path.join(__dirname, req.body.pdfPath),
-        path.join(process.cwd(), req.body.pdfPath),
-        path.join(__dirname, path.basename(req.body.pdfPath))
-      ];
-      for (const p of candidatePaths) {
-        if (fs.existsSync(p) && fs.statSync(p).isFile()) {
-          pdfInput = fs.readFileSync(p);
-          fileSource = `server-path:${p}`;
-          fileName = path.basename(p).replace(/\.pdf$/i, '').replace(/_/g, ' ');
-          break;
+      const rawPath = req.body.pdfPath.trim();
+      if (!/[\0\r\n]/.test(rawPath) && !rawPath.startsWith('-')) {
+        const safeBasename = path.basename(rawPath);
+        if (safeBasename.toLowerCase().endsWith('.pdf')) {
+          const candidatePaths = [
+            path.join(__dirname, safeBasename),
+            path.join(process.cwd(), safeBasename),
+            path.join(__dirname, 'public', 'docs', safeBasename)
+          ];
+          for (const p of candidatePaths) {
+            if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+              pdfInput = fs.readFileSync(p);
+              fileSource = `server-path:${safeBasename}`;
+              fileName = safeBasename.replace(/\.pdf$/i, '').replace(/_/g, ' ');
+              break;
+            }
+          }
         }
       }
     }
@@ -1194,15 +1224,68 @@ app.get('/api/layouts', async (req, res) => {
   }
 });
 
-// 3. GET /api/plots - List all Plots
+// 2b. GET /api/layouts/:id - Get Single Cadastral Layout Details
+app.get('/api/layouts/:id', async (req, res) => {
+  try {
+    const rawId = req.params.id;
+    const layoutId = typeof rawId === 'string' ? rawId.trim().slice(0, 128) : String(rawId || '').trim().slice(0, 128);
+    if (!layoutId || /[\0\r\n]/.test(layoutId)) {
+      return res.status(400).json({ success: false, error: 'Invalid or missing Layout ID' });
+    }
+    const { rows } = await query(`
+      SELECT l.*, 
+        (SELECT COUNT(*) FROM plots WHERE layout_id = l.id) as plot_count,
+        (SELECT COUNT(*) FROM plots WHERE layout_id = l.id AND (verification_status = 'Verified' OR verification_status = 'VERIFIED')) as verified_plots_count
+      FROM layouts l 
+      WHERE l.id = $1 
+      LIMIT 1
+    `, [layoutId]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Layout not found' });
+    }
+    res.json({ success: true, layout: rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. GET /api/plots - List all Plots (isolated by layoutId, areaId, or project)
 app.get('/api/plots', async (req, res) => {
   try {
-    const { layoutId } = req.query;
+    const rawLayoutId = req.query.layoutId;
+    const rawAreaId = req.query.areaId || req.query.projectId;
+    const layoutId = typeof rawLayoutId === 'string' ? rawLayoutId.trim().slice(0, 128) : (Array.isArray(rawLayoutId) ? String(rawLayoutId[0]).trim().slice(0, 128) : null);
+    const areaId = typeof rawAreaId === 'string' ? rawAreaId.trim().slice(0, 128) : (Array.isArray(rawAreaId) ? String(rawAreaId[0]).trim().slice(0, 128) : null);
+
+    if (layoutId && /[\0\r\n]/.test(layoutId)) {
+      return res.status(400).json({ error: 'Invalid layoutId parameter' });
+    }
+    if (areaId && /[\0\r\n]/.test(areaId)) {
+      return res.status(400).json({ error: 'Invalid areaId parameter' });
+    }
+
     let text = 'SELECT * FROM plots ORDER BY plot_number ASC';
     let params = [];
     if (layoutId) {
       text = 'SELECT * FROM plots WHERE layout_id = $1 ORDER BY plot_number ASC';
       params = [layoutId];
+    } else if (areaId) {
+      // Resolve active layout for area to prevent cross-layout polygon stacking
+      const lRes = await query(`
+        SELECT id FROM layouts
+        WHERE project_id = $1 OR id = $1
+        ORDER BY (status = 'Published') DESC, (status = 'Verified') DESC, created_at DESC
+        LIMIT 1
+      `, [areaId]);
+
+      if (lRes.rows.length > 0) {
+        text = 'SELECT * FROM plots WHERE layout_id = $1 ORDER BY plot_number ASC';
+        params = [lRes.rows[0].id];
+      } else {
+        text = 'SELECT * FROM plots WHERE project = $1 OR layout_id = $1 ORDER BY plot_number ASC';
+        params = [areaId];
+      }
     }
     const { rows } = await query(text, params);
     
@@ -1438,8 +1521,23 @@ app.get('/api/client/areas', async (req, res) => {
 // 6b. GET /api/client/areas/:areaId - Returns Area Metadata + Bounds + Official PDF Reference + Vector Structure
 app.get('/api/client/areas/:areaId', async (req, res) => {
   try {
-    const { areaId } = req.params;
-    const { rows } = await query(`
+    const rawAreaId = req.params.areaId;
+    const rawRequestedLayoutId = req.query.layoutId;
+    const areaId = typeof rawAreaId === 'string' ? rawAreaId.trim().slice(0, 128) : String(rawAreaId || '').trim().slice(0, 128);
+    const requestedLayoutId = typeof rawRequestedLayoutId === 'string' ? rawRequestedLayoutId.trim().slice(0, 128) : null;
+
+    if (!areaId || /[\0\r\n]/.test(areaId)) {
+      return res.status(400).json({ success: false, error: 'Invalid or missing Area ID' });
+    }
+    if (requestedLayoutId && /[\0\r\n]/.test(requestedLayoutId)) {
+      return res.status(400).json({ success: false, error: 'Invalid layoutId query parameter' });
+    }
+
+    const targetIdToFind = requestedLayoutId || areaId;
+    let r = null;
+
+    // 1. Direct layout ID lookup
+    const directLayoutRes = await query(`
       SELECT 
         l.id as layout_id,
         l.name as layout_name,
@@ -1459,14 +1557,45 @@ app.get('/api/client/areas/:areaId', async (req, res) => {
         (SELECT COUNT(*) FROM plots WHERE layout_id = l.id AND (verification_status = 'Verified' OR verification_status = 'VERIFIED')) as verified_plots_count
       FROM layouts l
       LEFT JOIN projects p ON l.project_id = p.id
-      WHERE l.id = $1 OR l.project_id = $1 OR p.id = $1 OR LOWER(p.name) = LOWER($1) OR LOWER(l.project_name) = LOWER($1) OR LOWER(l.name) = LOWER($1)
+      WHERE l.id = $1
       LIMIT 1
-    `, [areaId]);
+    `, [targetIdToFind]);
 
-    let r;
-    if (rows.length > 0) {
-      r = rows[0];
+    if (directLayoutRes.rows.length > 0) {
+      r = directLayoutRes.rows[0];
     } else {
+      // 2. Project/Area match, prioritizing Published > Verified > Latest
+      const projLayoutRes = await query(`
+        SELECT 
+          l.id as layout_id,
+          l.name as layout_name,
+          l.status as layout_status,
+          l.original_pdf_url,
+          l.original_pdf_name,
+          l.file_size,
+          l.bounding_width,
+          l.bounding_height,
+          l.extracted_plots_count,
+          l.uploaded_at,
+          p.id as project_id,
+          p.name as project_name,
+          p.address as project_address,
+          p.description as project_description,
+          (SELECT COUNT(*) FROM plots WHERE layout_id = l.id) as total_plots_count,
+          (SELECT COUNT(*) FROM plots WHERE layout_id = l.id AND (verification_status = 'Verified' OR verification_status = 'VERIFIED')) as verified_plots_count
+        FROM layouts l
+        LEFT JOIN projects p ON l.project_id = p.id
+        WHERE l.project_id = $1 OR p.id = $1 OR LOWER(p.name) = LOWER($1) OR LOWER(l.project_name) = LOWER($1) OR LOWER(l.name) = LOWER($1)
+        ORDER BY (l.status = 'Published') DESC, (l.status = 'Verified') DESC, l.created_at DESC
+        LIMIT 1
+      `, [areaId]);
+
+      if (projLayoutRes.rows.length > 0) {
+        r = projLayoutRes.rows[0];
+      }
+    }
+
+    if (!r) {
       // Fallback: Check if areaId matches a project in projects table
       const projRes = await query(`
         SELECT * FROM projects
@@ -1495,7 +1624,7 @@ app.get('/api/client/areas/:areaId', async (req, res) => {
           verified_plots_count: 0
         };
       } else {
-        // Fallback if project does not yet have an uploaded PDF layout so it never returns an unhandled 404
+        // Fallback if project does not yet have an uploaded PDF layout
         r = {
           layout_id: areaId,
           layout_name: `${areaId} Cadastral Layout`,
@@ -1517,21 +1646,25 @@ app.get('/api/client/areas/:areaId', async (req, res) => {
       }
     }
 
-    // Fetch complete vector structure (all plots with closed polygon geometries)
+    // 3. Fetch sibling layouts for this project/area for layout switching
+    const siblingLayoutsRes = await query(`
+      SELECT id, name, status, original_pdf_name, extracted_plots_count, bounding_width, bounding_height
+      FROM layouts
+      WHERE project_id = $1 OR id = $2
+      ORDER BY (status = 'Published') DESC, (status = 'Verified') DESC, created_at DESC
+    `, [r.project_id || areaId, r.layout_id]);
+
+    // 4. Fetch complete vector structure STRICTLY isolated to this layout_id!
+    // Prevents stacking plots from other layouts or past uploads on top of each other
     const plotsQuery = await query(`
       SELECT 
         p.id, p.plot_number, p.layout_id, p.project, p.area, p.unit, p.length, p.width,
         p.document_area, p.facing, p.facing_road_width, p.polygon_geometry, p.edge_dimensions, p.valuation,
         p.price_per_sqft, p.status, p.location, p.verification_status, p.valuation_notes
       FROM plots p
-      WHERE (p.layout_id = $1 OR p.layout_id = $2 OR (p.project IS NOT NULL AND (LOWER(p.project) = LOWER($3) OR LOWER(p.project) = LOWER($1) OR LOWER(p.project) = LOWER($2))))
-         OR EXISTS (
-           SELECT 1 FROM layouts l 
-           WHERE l.id = p.layout_id 
-             AND (l.id = $1 OR l.project_id = $2 OR LOWER(l.project_name) = LOWER($3) OR LOWER(l.name) = LOWER($3))
-         )
+      WHERE p.layout_id = $1
       ORDER BY p.plot_number ASC
-    `, [r.layout_id, r.project_id || areaId, r.project_name || '']);
+    `, [r.layout_id]);
 
     const plots = plotsQuery.rows.map((pr) => {
       let parsedGeom = typeof pr.polygon_geometry === 'string' ? JSON.parse(pr.polygon_geometry) : pr.polygon_geometry;
@@ -1631,7 +1764,9 @@ app.get('/api/client/areas/:areaId', async (req, res) => {
       totalPlots,
       verifiedPlotsCount,
       isVerified,
-      isOngoing
+      isOngoing,
+      availableLayouts: siblingLayoutsRes.rows,
+      layouts: siblingLayoutsRes.rows
     };
 
     res.json({
@@ -1644,6 +1779,8 @@ app.get('/api/client/areas/:areaId', async (req, res) => {
       notice,
       isVerified,
       isOngoing,
+      availableLayouts: siblingLayoutsRes.rows,
+      layouts: siblingLayoutsRes.rows,
       verificationNotice: verificationNoticeMessage,
       noticeBanner: verificationNoticeMessage
     });
@@ -1655,30 +1792,52 @@ app.get('/api/client/areas/:areaId', async (req, res) => {
 // 6c. GET /api/client/areas/:areaId/plots - Returns Verified/Published Plots for Area with Closed Polygons
 app.get('/api/client/areas/:areaId/plots', async (req, res) => {
   try {
-    const { areaId } = req.params;
+    const rawAreaId = req.params.areaId;
+    const rawRequestedLayoutId = req.query.layoutId;
+    const areaId = typeof rawAreaId === 'string' ? rawAreaId.trim().slice(0, 128) : String(rawAreaId || '').trim().slice(0, 128);
+    const requestedLayoutId = typeof rawRequestedLayoutId === 'string' ? rawRequestedLayoutId.trim().slice(0, 128) : null;
 
-    // Retrieve layout status if exists
-    const layoutRes = await query(`
+    if (!areaId || /[\0\r\n]/.test(areaId)) {
+      return res.status(400).json({ success: false, error: 'Invalid or missing Area ID' });
+    }
+    if (requestedLayoutId && /[\0\r\n]/.test(requestedLayoutId)) {
+      return res.status(400).json({ success: false, error: 'Invalid layoutId query parameter' });
+    }
+
+    // 1. Resolve Target Layout (Direct match on layout id first, then project/area match)
+    let layoutRow = null;
+    const directLayoutRes = await query(`
       SELECT id, status, name, project_name FROM layouts
-      WHERE id = $1 OR project_id = $1 OR LOWER(project_name) = LOWER($1) OR LOWER(name) = LOWER($1)
+      WHERE id = $1
       LIMIT 1
-    `, [areaId]);
-    const layoutRow = layoutRes.rows.length > 0 ? layoutRes.rows[0] : null;
+    `, [requestedLayoutId || areaId]);
 
+    if (directLayoutRes.rows.length > 0) {
+      layoutRow = directLayoutRes.rows[0];
+    } else {
+      const projLayoutRes = await query(`
+        SELECT id, status, name, project_name FROM layouts
+        WHERE project_id = $1 OR LOWER(project_name) = LOWER($1) OR LOWER(name) = LOWER($1)
+        ORDER BY (status = 'Published') DESC, (status = 'Verified') DESC, created_at DESC
+        LIMIT 1
+      `, [areaId]);
+      if (projLayoutRes.rows.length > 0) {
+        layoutRow = projLayoutRes.rows[0];
+      }
+    }
+
+    const targetLayoutId = layoutRow ? layoutRow.id : (requestedLayoutId || areaId);
+
+    // 2. Fetch plots strictly for this layout to ensure zero cross-layout overlap
     const { rows } = await query(`
       SELECT 
         p.id, p.plot_number, p.layout_id, p.project, p.area, p.unit, p.length, p.width,
         p.document_area, p.facing, p.facing_road_width, p.polygon_geometry, p.edge_dimensions, p.valuation,
         p.price_per_sqft, p.status, p.location, p.verification_status, p.valuation_notes
       FROM plots p
-      WHERE (p.layout_id = $1 OR p.project = $1 OR LOWER(p.project) = LOWER($1))
-         OR EXISTS (
-           SELECT 1 FROM layouts l 
-           WHERE l.id = p.layout_id 
-             AND (l.id = $1 OR l.project_id = $1 OR LOWER(l.project_name) = LOWER($1) OR LOWER(l.name) = LOWER($1))
-         )
+      WHERE p.layout_id = $1
       ORDER BY p.plot_number ASC
-    `, [areaId]);
+    `, [targetLayoutId]);
 
     const clientPlots = rows.map((r) => {
       let parsedGeom = typeof r.polygon_geometry === 'string' ? JSON.parse(r.polygon_geometry) : r.polygon_geometry;
@@ -1762,8 +1921,19 @@ app.get('/api/client/areas/:areaId/plots', async (req, res) => {
 // 6d. GET /api/client/plots/:plotId - Returns Complete Client-Safe Plot Details
 app.get('/api/client/plots/:plotId', async (req, res) => {
   try {
-    const { plotId } = req.params;
-    const { rows } = await query(`
+    const rawPlotId = req.params.plotId;
+    const plotId = typeof rawPlotId === 'string' ? rawPlotId.trim().slice(0, 128) : String(rawPlotId || '').trim().slice(0, 128);
+    const rawLayoutId = req.query.layoutId;
+    const layoutId = typeof rawLayoutId === 'string' ? rawLayoutId.trim().slice(0, 128) : null;
+
+    if (!plotId || /[\0\r\n]/.test(plotId)) {
+      return res.status(400).json({ success: false, error: 'Invalid or missing plot ID' });
+    }
+    if (layoutId && /[\0\r\n]/.test(layoutId)) {
+      return res.status(400).json({ success: false, error: 'Invalid layoutId query parameter' });
+    }
+
+    let sql = `
       SELECT 
         p.id, p.plot_number, p.layout_id, p.project, p.area, p.unit, p.length, p.width,
         p.document_area, p.facing, p.facing_road_width, p.polygon_geometry, p.valuation,
@@ -1771,9 +1941,16 @@ app.get('/api/client/plots/:plotId', async (req, res) => {
         l.original_pdf_url, l.original_pdf_name
       FROM plots p
       LEFT JOIN layouts l ON p.layout_id = l.id
-      WHERE p.id = $1 OR p.plot_number = $1
-      LIMIT 1
-    `, [plotId]);
+      WHERE (p.id = $1 OR p.plot_number = $1)
+    `;
+    const params = [plotId];
+    if (layoutId) {
+      sql += ' AND p.layout_id = $2';
+      params.push(layoutId);
+    }
+    sql += ' LIMIT 1';
+
+    const { rows } = await query(sql, params);
 
     if (rows.length === 0) {
       return res.status(404).json({ error: `Plot with ID ${plotId} not found` });
@@ -1831,22 +2008,39 @@ app.get('/api/client/published-layouts', async (req, res) => {
 // 7. GET /api/client/layouts/:layoutId/plots - Alias for Layout Plots
 app.get('/api/client/layouts/:layoutId/plots', async (req, res) => {
   try {
-    const { layoutId } = req.params;
+    const rawLayoutId = req.params.layoutId;
+    const layoutId = typeof rawLayoutId === 'string' ? rawLayoutId.trim().slice(0, 128) : String(rawLayoutId || '').trim().slice(0, 128);
+
+    if (!layoutId || /[\0\r\n]/.test(layoutId)) {
+      return res.status(400).json({ success: false, error: 'Invalid or missing Layout ID' });
+    }
 
     // Check layout status
-    const layoutRes = await query(`
+    let layoutRes = await query(`
       SELECT id, status, name, project_name FROM layouts
-      WHERE id = $1 OR project_id = $1 OR LOWER(project_name) = LOWER($1) OR LOWER(name) = LOWER($1)
+      WHERE id = $1
       LIMIT 1
     `, [layoutId]);
-    const layoutRow = layoutRes.rows.length > 0 ? layoutRes.rows[0] : null;
 
+    if (layoutRes.rows.length === 0) {
+      layoutRes = await query(`
+        SELECT id, status, name, project_name FROM layouts
+        WHERE project_id = $1 OR LOWER(project_name) = LOWER($1) OR LOWER(name) = LOWER($1)
+        ORDER BY (status = 'Published') DESC, (status = 'Verified') DESC, created_at DESC
+        LIMIT 1
+      `, [layoutId]);
+    }
+
+    const layoutRow = layoutRes.rows.length > 0 ? layoutRes.rows[0] : null;
+    const targetLayoutId = layoutRow ? layoutRow.id : layoutId;
+
+    // Strictly fetch plots for this layout to prevent polygon overlap
     const { rows } = await query(
       `SELECT id, plot_number, layout_id, project, area, unit, length, width, document_area, facing, facing_road_width, polygon_geometry, edge_dimensions, valuation, price_per_sqft, status, location, verification_status, valuation_notes
        FROM plots 
-       WHERE layout_id = $1 OR project = $1 OR LOWER(project) = LOWER($1)
+       WHERE layout_id = $1
        ORDER BY plot_number ASC`,
-      [layoutId]
+      [targetLayoutId]
     );
 
     const clientPlots = rows.map((r) => {

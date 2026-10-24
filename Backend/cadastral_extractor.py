@@ -14,8 +14,10 @@ except ImportError:
         sys.stderr.write("ERROR: PyMuPDF is not installed. Please install it using 'pip install PyMuPDF'\n")
         sys.exit(1)
 import numpy as np
-from shapely.geometry import LineString, Polygon, Point, MultiLineString
+from shapely.geometry import LineString, Polygon, Point, MultiLineString, MultiPolygon
 from shapely.ops import polygonize, unary_union, snap
+from shapely.strtree import STRtree
+from shapely.validation import make_valid
 
 try:
     import pdfplumber
@@ -114,11 +116,18 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
         raise FileNotFoundError(f"PDF file not found at path: {pdf_path}")
         
     doc = pymupdf.open(pdf_path)
-    doc_class = classify_document(doc)
     page_count = len(doc)
+    if page_count == 0:
+        raise ValueError("PDF document is empty (0 pages).")
+    if page_count > 25:
+        raise ValueError(f"PDF exceeds maximum page limit ({page_count} pages > 25 max). Cadastral layouts are restricted to 25 pages max.")
+        
+    doc_class = classify_document(doc)
+    file_size_bytes = os.path.getsize(pdf_path) if os.path.exists(pdf_path) else 0
 
     all_spans = []
     structural_lines = []
+    rejected_geometries = []
     
     page_width = 1200.0
     page_height = 800.0
@@ -204,6 +213,18 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
                         if ((pb[0]-pa[0])**2 + (pb[1]-pa[1])**2)**0.5 >= 0.4:
                             structural_lines.append(LineString([pa, pb]))
 
+    # Deduplicate identical line segments to clean topological junctions
+    unique_lines = []
+    seen_lines = set()
+    for ls in structural_lines:
+        coords = tuple(ls.coords)
+        line_key = (min(coords[0], coords[1]), max(coords[0], coords[1]))
+        if line_key not in seen_lines:
+            seen_lines.add(line_key)
+            unique_lines.append(ls)
+
+    duplicate_segments_count = len(structural_lines) - len(unique_lines)
+
     # Group spans by horizontal row alignment (same line)
     spans_by_y = []
     for span in sorted(all_spans, key=lambda s: s["y0"]):
@@ -261,9 +282,35 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
                 return True
         return False
 
-    # Planar Graph Polygonization
-    merged_lines = unary_union(structural_lines)
-    all_polys = [p for p in polygonize(merged_lines) if 10 <= p.area <= 200000]
+    # Planar Graph Polygonization with Topology Validation
+    merged_lines = unary_union(unique_lines)
+    raw_polys = list(polygonize(merged_lines))
+    
+    all_polys = []
+    invalid_poly_count = 0
+    valid_poly_count = 0
+
+    for p in raw_polys:
+        if p.area < 10.0:
+            if len(rejected_geometries) < 50:
+                rejected_geometries.append({
+                    "reason": "AREA_BELOW_THRESHOLD_10PT",
+                    "areaPt": round(p.area, 2)
+                })
+            continue
+
+        if not p.is_valid:
+            invalid_poly_count += 1
+            repaired = make_valid(p)
+            if repaired.geom_type == 'MultiPolygon':
+                for subp in repaired.geoms:
+                    if subp.area >= 10.0:
+                        all_polys.append(subp)
+            elif repaired.geom_type == 'Polygon' and repaired.area >= 10.0:
+                all_polys.append(repaired)
+        else:
+            valid_poly_count += 1
+            all_polys.append(p)
 
     # ---------------------------------------------------------
     # 3. DYNAMIC PLOT LABEL EXTRACTION & SPATIAL ASSIGNMENT
@@ -291,7 +338,9 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
                         "cx": s["cx"],
                         "cy": s["cy"],
                         "pt": Point(s["cx"], s["cy"]),
-                        "bbox": s["bbox"]
+                        "bbox": s["bbox"],
+                        "font": s.get("font", ""),
+                        "size": s.get("size", 10.0)
                     })
 
     # Deduplicate label candidates by (plot_num, cx, cy)
@@ -341,63 +390,82 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
     sorted_pnums = sorted(list(cands_by_pnum.keys()), key=pnum_key)
     temp_matches = []
     
-    # Phase A: Containing Polygon Match
+    # Boundary threshold: Subdivision parcels must not exceed layout parcel threshold
+    # Polygons above this are macro-polygons (road corridors, outer site boundaries)
+    PARCEL_MAX_AREA_PT = min(25000.0, page_width * page_height * 0.15)
+
+    # Phase A: Containing Polygon Match with Area-Aware Best Candidate Selection
     for pnum_str in sorted_pnums:
         if pnum_str == "0":
             continue
         cands = cands_by_pnum[pnum_str]
         
-        containing_found = False
+        # Sort candidates: prefer plot font (Romantic) or multi-digit raw label (like '09') over isolated stray digits
+        cands.sort(key=lambda c: (
+            0 if 'Romantic' in c.get('font', '') or len(c['raw_text']) >= 2 else 1,
+            -c.get('size', 10.0)
+        ))
+
+        best_cand = None
+        best_poly = None
+        best_idx = None
+        best_score = float('inf')
+        official_sqm = official_table_map.get(pnum_str, 0.0)
+
         for cand in cands:
             pt = cand["pt"]
-            containing = []
             for idx, poly in enumerate(all_polys):
                 if idx in used_poly_indices:
                     continue
+                # Exclude macro-polygons from parcel plot assignment
+                if not (20 <= poly.area <= PARCEL_MAX_AREA_PT):
+                    continue
                 if poly.contains(pt):
-                    containing.append((idx, poly))
-            if containing:
-                expected_pt_area = official_table_map.get(pnum_str, 200.0) * 10.86
-                small_containing = [c for c in containing if 50 <= c[1].area <= 250000]
-                if not small_containing:
-                    small_containing = containing
-                small_containing.sort(key=lambda item: abs(item[1].area - expected_pt_area))
-                best_idx, best_poly = small_containing[0]
-                used_poly_indices.add(best_idx)
-                found_plot_ids.add(pnum_str)
-                official_sqm = official_table_map.get(pnum_str, 0.0)
-                if official_sqm > 0:
-                    raw_ratios.append(best_poly.area / official_sqm)
-                temp_matches.append((pnum_str, cand, best_poly, best_idx))
-                containing_found = True
-                break
+                    centroid = poly.centroid
+                    dist_to_center = ((centroid.x - pt.x)**2 + (centroid.y - pt.y)**2)**0.5
+                    score = dist_to_center
+                    if 'Romantic' in cand.get('font', ''):
+                        score *= 0.5
+                    if score < best_score:
+                        best_score = score
+                        best_cand = cand
+                        best_poly = poly
+                        best_idx = idx
 
-    # Phase B: Nearest Polygon Fallback
+        if best_idx is not None:
+            used_poly_indices.add(best_idx)
+            found_plot_ids.add(pnum_str)
+            if official_sqm > 0:
+                raw_ratios.append(best_poly.area / official_sqm)
+            temp_matches.append((pnum_str, best_cand, best_poly, best_idx))
+
+    # Phase B: Nearest Polygon Fallback (constrained to parcel dimensions)
     for pnum_str in sorted_pnums:
         if pnum_str == "0" or pnum_str in found_plot_ids:
             continue
         cands = cands_by_pnum[pnum_str]
         best_cand = cands[0]
+        best_poly = None
         best_idx = None
-        min_dist = 999999
+        min_dist = float('inf')
         
         for cand in cands:
             pt = cand["pt"]
             for idx, poly in enumerate(all_polys):
                 if idx in used_poly_indices:
                     continue
-                if not (20 <= poly.area <= 250000):
+                if not (20 <= poly.area <= PARCEL_MAX_AREA_PT):
                     continue
                 dist = poly.distance(pt)
                 if dist < min_dist and dist < 120.0:
                     min_dist = dist
                     best_idx = idx
                     best_cand = cand
+                    best_poly = poly
 
         if best_idx is not None:
             used_poly_indices.add(best_idx)
             found_plot_ids.add(pnum_str)
-            best_poly = all_polys[best_idx]
             official_sqm = official_table_map.get(pnum_str, 0.0)
             if official_sqm > 0:
                 raw_ratios.append(best_poly.area / official_sqm)
@@ -425,6 +493,8 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
     # ---------------------------------------------------------
     # 4. CANONICAL GEOMETRY NORMALIZATION & EDGE MAPPING
     # ---------------------------------------------------------
+    extracted_site_boundary = None
+
     for pnum_str, lbl, poly, idx in temp_matches:
         source_coords = [[round(float(x), 2), round(float(y), 2)] for x, y in poly.exterior.coords]
         
@@ -472,9 +542,17 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
         if "OPEN SPACE" in raw_label_upper or "PARK" in raw_label_upper or "AMENITY" in raw_label_upper or "GREEN" in raw_label_upper:
             entity_type = "OPEN_SPACE"
             final_pnum_str = lbl["raw_text"]
-        elif calc_sqm > 30000.0 or poly.area > (page_width * page_height * 0.4):
-            entity_type = "SITE_BOUNDARY"
-            final_pnum_str = "SITE_BOUNDARY"
+        elif calc_sqm > 5000.0 or poly.area > (page_width * page_height * 0.3):
+            # Macro-polygon / Layout Envelope: store in infrastructure, do NOT add to parcel plots
+            extracted_site_boundary = {
+                "id": "site-boundary-extracted",
+                "name": "Site Boundary Envelope",
+                "coordinates": source_coords,
+                "canonicalGeometry": canonical_coords,
+                "calculatedAreaSqm": calc_sqm,
+                "calculatedAreaSqft": calc_sqft
+            }
+            continue
         else:
             entity_type = "PLOT"
             final_pnum_str = str(pnum_str)
@@ -514,7 +592,18 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
             bh = bounds[3] - bounds[1]
             aspect = max(bw, bh) / (min(bw, bh) + 0.001)
 
-            if poly.area > 5000 and aspect > 3.0:
+            if poly.area > (page_width * page_height * 0.3) or calc_sqm > 30000.0:
+                if not extracted_site_boundary:
+                    canonical_coords = [[round((x - cx_origin) / pts_per_m, 2), round((cy_origin - y) / pts_per_m, 2)] for x, y in poly.exterior.coords]
+                    extracted_site_boundary = {
+                        "id": "site-boundary-extracted",
+                        "name": "Site Boundary Envelope",
+                        "coordinates": coords,
+                        "canonicalGeometry": canonical_coords,
+                        "calculatedAreaSqm": calc_sqm,
+                        "calculatedAreaSqft": round(calc_sqm * 10.7639, 2)
+                    }
+            elif poly.area > 5000 and aspect > 3.0:
                 infrastructure_roads.append({
                     "id": f"road-extracted-{idx+1}",
                     "name": f"Extracted Layout Road {len(infrastructure_roads)+1}",
@@ -535,38 +624,62 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
                 })
 
     # ---------------------------------------------------------
-    # 5. AUTOMATED OVERLAP & TOPOLOGY AUDIT
+    # 5. AUTOMATED OVERLAP & TOPOLOGY AUDIT (Shapely STRtree)
     # ---------------------------------------------------------
     overlap_pairs = []
-    total_overlap_area = 0.0
+    total_overlap_area_sqft = 0.0
+    total_overlap_area_sqm = 0.0
+    valid_plot_polygons_count = 0
+    invalid_plot_polygons_count = 0
 
     plot_polygons = []
     for p in matched_plots:
         poly_obj = Polygon(p["polygonGeometry"])
         if not poly_obj.is_valid:
-            poly_obj = poly_obj.buffer(0)
-        plot_polygons.append((p, poly_obj, poly_obj.bounds))
+            invalid_plot_polygons_count += 1
+            poly_obj = make_valid(poly_obj)
+            if poly_obj.geom_type == 'MultiPolygon':
+                poly_obj = max(poly_obj.geoms, key=lambda g: g.area)
+            elif poly_obj.geom_type == 'GeometryCollection':
+                subpolys = [g for g in poly_obj.geoms if g.geom_type == 'Polygon']
+                poly_obj = max(subpolys, key=lambda g: g.area) if subpolys else poly_obj
+        else:
+            valid_plot_polygons_count += 1
+        plot_polygons.append(poly_obj)
 
-    for i in range(len(plot_polygons)):
-        p1, poly1, bounds1 = plot_polygons[i]
-        minx1, miny1, maxx1, maxy1 = bounds1
-        for j in range(i + 1, len(plot_polygons)):
-            p2, poly2, bounds2 = plot_polygons[j]
-            minx2, miny2, maxx2, maxy2 = bounds2
+    # Fast spatial indexing using STRtree
+    if plot_polygons:
+        tree = STRtree(plot_polygons)
+        # Area threshold grounded in PDF point precision (0.05 pt^2)
+        # Distinguishes shared boundaries (line intersections with area = 0) from real overlaps
+        OVERLAP_TOLERANCE_PT = 0.05
 
-            if maxx1 <= minx2 or maxx2 <= minx1 or maxy1 <= miny2 or maxy2 <= miny1:
-                continue
-
-            if poly1.intersects(poly2):
-                inter = poly1.intersection(poly2)
-                if inter.area > 0.05:
-                    overlap_sqft = round(inter.area / (pts_per_ft ** 2), 2)
-                    overlap_pairs.append({
-                        "plotA": p1["plotNumber"],
-                        "plotB": p2["plotNumber"],
-                        "overlapAreaSqft": overlap_sqft
-                    })
-                    total_overlap_area += overlap_sqft
+        for i, poly1 in enumerate(plot_polygons):
+            p1 = matched_plots[i]
+            candidate_indices = tree.query(poly1)
+            for j in candidate_indices:
+                if i < j:
+                    poly2 = plot_polygons[j]
+                    p2 = matched_plots[j]
+                    
+                    if poly1.intersects(poly2):
+                        inter = poly1.intersection(poly2)
+                        if inter.area > OVERLAP_TOLERANCE_PT:
+                            overlap_sqft = round(inter.area / (pts_per_ft ** 2), 2)
+                            overlap_sqm = round(inter.area / pts_per_sqm, 2)
+                            rel_a = round((inter.area / poly1.area) * 100, 2)
+                            rel_b = round((inter.area / poly2.area) * 100, 2)
+                            overlap_pairs.append({
+                                "plotA": p1["plotNumber"],
+                                "plotB": p2["plotNumber"],
+                                "overlapAreaPt": round(inter.area, 4),
+                                "overlapAreaSqft": overlap_sqft,
+                                "overlapAreaSqm": overlap_sqm,
+                                "relativeOverlapPercentA": rel_a,
+                                "relativeOverlapPercentB": rel_b
+                            })
+                            total_overlap_area_sqft += overlap_sqft
+                            total_overlap_area_sqm += overlap_sqm
 
     expected_count = len(official_records_list) if official_records_list else len(matched_plots)
     missing_plot_ids = []
@@ -579,12 +692,22 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
 
     forensic_report = {
         "documentName": os.path.basename(pdf_path),
+        "fileSizeBytes": file_size_bytes,
         "documentType": doc_class["documentType"],
         "documentClassification": doc_class,
         "pageCount": page_count,
         "pageDimensionsPt": {"width": page_width, "height": page_height},
-        "boundaryCandidatesFound": len(structural_lines),
+        "rawSegmentsExtracted": len(structural_lines),
+        "uniqueSegmentsExtracted": len(unique_lines),
+        "duplicateSegmentsPruned": duplicate_segments_count,
+        "boundaryCandidatesFound": len(unique_lines),
         "validPolygonsReconstructed": len(all_polys),
+        "validPolygonCount": valid_poly_count,
+        "invalidPolygonCount": invalid_poly_count,
+        "validPlotPolygonsCount": valid_plot_polygons_count,
+        "invalidPlotPolygonsCount": invalid_plot_polygons_count,
+        "rejectedGeometriesCount": len(rejected_geometries),
+        "rejectedGeometriesSummary": f"{len(rejected_geometries)} micro-sliver loops (<10 pt^2) filtered from planar graph",
         "tableRecordsExtracted": len(official_records_list),
         "expectedSourcePlotCount": expected_count,
         "matchedPlotCount": len(matched_plots),
@@ -595,8 +718,18 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
         "geometryMismatchCount": len([p for p in matched_plots if p["verificationStatus"] == "GEOMETRY_MISMATCH"]),
         "verifiedPlotsCount": len([p for p in matched_plots if p["verificationStatus"] == "VERIFIED"]),
         "overlapCount": len(overlap_pairs),
-        "totalOverlapAreaSqft": round(total_overlap_area, 2),
+        "totalOverlapAreaSqft": round(total_overlap_area_sqft, 2),
+        "totalOverlapAreaSqm": round(total_overlap_area_sqm, 2),
         "overlapPairs": overlap_pairs,
+        "coordinateTransformation": {
+            "origin": [round(cx_origin, 2), round(cy_origin, 2)],
+            "scaleMethod": "TABLE_SCHEDULE_CALIBRATION",
+            "ptsPerSqm": round(pts_per_sqm, 4),
+            "ptsPerFt": round(pts_per_ft, 4),
+            "ptsPerM": round(pts_per_m, 4),
+            "units": "meters",
+            "spatialIndexing": "STRtree"
+        },
         "secondaryAudit": pdfplumber_audit,
         "canPublish": len(missing_plot_ids) == 0 and len(overlap_pairs) == 0 and len([p for p in matched_plots if p["verificationStatus"] == "GEOMETRY_MISMATCH"]) == 0
     }
@@ -646,7 +779,8 @@ def parse_cadastral_pdf(pdf_path, tolerance_sqm=5.0, snap_tolerance=0.5):
         "geoJsonFeatureCollection": geoJsonFeatureCollection,
         "infrastructureGeometry": {
             "roads": infrastructure_roads,
-            "openSpaces": infrastructure_open_spaces
+            "openSpaces": infrastructure_open_spaces,
+            "siteBoundary": extracted_site_boundary
         },
         "bounds": {
             "minX": 0,
@@ -668,5 +802,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)
-
-

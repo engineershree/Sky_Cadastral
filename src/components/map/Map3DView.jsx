@@ -16,7 +16,7 @@ export default function Map3DView({ onOpenBookingModal }) {
   const mountRef = useRef(null);
 
   const currentLayout = layouts.find((l) => l.id === activeLayoutId) || layouts[0];
-  const layoutPlots = plots.filter((p) => p.layoutId ? p.layoutId === currentLayout?.id : currentLayout?.id === layouts[0]?.id);
+  const layoutPlots = (plots || []).filter((p) => p && currentLayout?.id && p.layoutId === currentLayout.id);
 
   const [selected3DPlot, setSelected3DPlot] = useState(layoutPlots[0] || plots[0] || null);
   const [cameraMode, setCameraMode] = useState('perspective'); // 'perspective' | 'orthographic'
