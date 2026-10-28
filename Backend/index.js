@@ -1217,7 +1217,7 @@ app.post('/api/cadastral/publish-layout', async (req, res) => {
 // 2. GET /api/layouts - List all Cadastral Layout Plans
 app.get('/api/layouts', async (req, res) => {
   try {
-    const { rows } = await query('SELECT * FROM layouts ORDER BY created_at DESC');
+    const { rows } = await query("SELECT * FROM layouts ORDER BY (id = 'LAYOUT-001') DESC, (status = 'Published') DESC, created_at DESC");
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });

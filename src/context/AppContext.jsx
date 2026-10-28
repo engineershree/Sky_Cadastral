@@ -207,6 +207,7 @@ export function AppProvider({ children }) {
           const remotePlots = await plotsRes.json();
           if (remotePlots && remotePlots.length > 0) {
             setPlots(remotePlots);
+            localStorage.setItem('sky_cadastral_plots', JSON.stringify(remotePlots));
           }
         }
 
@@ -214,6 +215,7 @@ export function AppProvider({ children }) {
           const remoteBookings = await bookingsRes.json();
           if (remoteBookings && remoteBookings.length > 0) {
             setBookings(remoteBookings);
+            localStorage.setItem('sky_cadastral_bookings', JSON.stringify(remoteBookings));
           }
         }
 
@@ -221,6 +223,7 @@ export function AppProvider({ children }) {
           const remoteRev = await revenueRes.json();
           if (remoteRev && remoteRev.length > 0) {
             setRevenueTransactions(remoteRev);
+            localStorage.setItem('sky_cadastral_revenue', JSON.stringify(remoteRev));
           }
         }
 
@@ -228,6 +231,7 @@ export function AppProvider({ children }) {
           const remoteExp = await expensesRes.json();
           if (remoteExp && remoteExp.length > 0) {
             setExpenses(remoteExp);
+            localStorage.setItem('sky_cadastral_expenses', JSON.stringify(remoteExp));
           }
         }
 
@@ -392,6 +396,10 @@ export function AppProvider({ children }) {
       return nextList;
     });
   };
+
+  useEffect(() => {
+    localStorage.setItem('sky_cadastral_plots', JSON.stringify(plots));
+  }, [plots]);
 
   useEffect(() => {
     localStorage.setItem('sky_cadastral_bookings', JSON.stringify(bookings));

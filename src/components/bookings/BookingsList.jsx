@@ -44,7 +44,7 @@ export default function BookingsList({ onOpenBookingModal, onOpenMarkSold }) {
   };
 
   const handleLaunchMap = (mode) => {
-    setActiveModule('Map / Visualization');
+    setActiveModule('2D & 3D Map');
     setMapMode(mode);
   };
 

@@ -21,6 +21,16 @@ export default function Map3DView({ onOpenBookingModal }) {
   const [selected3DPlot, setSelected3DPlot] = useState(layoutPlots[0] || plots[0] || null);
   const [cameraMode, setCameraMode] = useState('perspective'); // 'perspective' | 'orthographic'
 
+  useEffect(() => {
+    if (layoutPlots && layoutPlots.length > 0) {
+      if (!selected3DPlot || !layoutPlots.some((p) => p.id === selected3DPlot.id)) {
+        setSelected3DPlot(layoutPlots[0]);
+      }
+    } else {
+      setSelected3DPlot(null);
+    }
+  }, [activeLayoutId, layoutPlots.length]);
+
   const formatCurrency = (val) =>
     `₹${(val || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp, calculatePolygonArea } from '../../context/AppContext';
 
 export default function Map2DView({ onOpenBookingModal }) {
@@ -18,6 +18,16 @@ export default function Map2DView({ onOpenBookingModal }) {
   const layoutPlots = (plots || []).filter((p) => p && currentLayout?.id && p.layoutId === currentLayout.id);
 
   const [selectedPlotMap, setSelectedPlotMap] = useState(layoutPlots[0] || plots[0] || null);
+
+  useEffect(() => {
+    if (layoutPlots && layoutPlots.length > 0) {
+      if (!selectedPlotMap || !layoutPlots.some((p) => p.id === selectedPlotMap.id)) {
+        setSelectedPlotMap(layoutPlots[0]);
+      }
+    } else {
+      setSelectedPlotMap(null);
+    }
+  }, [activeLayoutId, layoutPlots.length]);
 
   // Zoom & Pan state
   const [zoom, setZoom] = useState(1);

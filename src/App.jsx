@@ -29,6 +29,8 @@ import Toast from './components/ui/Toast';
 
 // Cadastral Verification Components
 import CadastralVerificationCanvas from './components/map/CadastralVerificationCanvas';
+import Map2DView from './components/map/Map2DView';
+import Map3DView from './components/map/Map3DView';
 import ForensicReportModal from './components/reports/ForensicReportModal';
 
 // Auth
@@ -193,7 +195,7 @@ function generateInitialDemarcationPlots(areaId, areaName) {
 }
 
 function MainAppContent() {
-  const { activeModule, setActiveModule, plots, setPlots, updateBulkPlots, layouts, activeLayoutId, setActiveLayoutId, areas, showToast } = useApp();
+  const { activeModule, setActiveModule, mapMode, plots, setPlots, updateBulkPlots, layouts, activeLayoutId, setActiveLayoutId, areas, showToast } = useApp();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -745,6 +747,14 @@ function MainAppContent() {
           {activeModule === 'Reports' && <ReportsView />}
 
           {activeModule === 'Settings' && <SettingsView />}
+
+          {(activeModule === '2D & 3D Map' || activeModule === 'Map / Visualization') && (
+            mapMode === '3D View' ? (
+              <Map3DView onOpenBookingModal={handleOpenBookingModal} />
+            ) : (
+              <Map2DView onOpenBookingModal={handleOpenBookingModal} />
+            )
+          )}
 
           {activeModule === 'Cadastral Verification' && (
             <CadastralVerificationCanvas

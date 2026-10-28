@@ -19,6 +19,7 @@ export default function Sidebar({ mobileOpen, setMobileOpen }) {
   const navItems = [
     { name: 'Dashboard', icon: 'dashboard' },
     { name: 'Cadastral Verification', icon: 'verified' },
+    { name: '2D & 3D Map', icon: 'map' },
     {
       name: 'Plots',
       icon: 'landscape',

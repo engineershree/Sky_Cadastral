@@ -68,13 +68,23 @@ export default function PlotsList({ onOpenAddPlot, onOpenBookingModal, onOpenEdi
           </p>
         </div>
 
-        <button
-          onClick={onOpenAddPlot}
-          className="bg-[#001B3A] text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-[#002652] flex items-center gap-1.5 shadow-xs transition-all"
-        >
-          <span className="material-symbols-outlined text-[18px]">add_box</span>
-          <span>+ Add Plot</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveModule('2D & 3D Map')}
+            className="border border-[#001B3A] text-[#001B3A] bg-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-gray-50 flex items-center gap-1.5 shadow-xs transition-all"
+          >
+            <span className="material-symbols-outlined text-[18px]">map</span>
+            <span>2D & 3D Map</span>
+          </button>
+
+          <button
+            onClick={onOpenAddPlot}
+            className="bg-[#001B3A] text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-[#002652] flex items-center gap-1.5 shadow-xs transition-all"
+          >
+            <span className="material-symbols-outlined text-[18px]">add_box</span>
+            <span>+ Add Plot</span>
+          </button>
+        </div>
       </div>
 
       {/* Selected Area Active Banner */}
@@ -103,6 +113,14 @@ export default function PlotsList({ onOpenAddPlot, onOpenBookingModal, onOpenEdi
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveModule('2D & 3D Map')}
+              className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-bold rounded-lg border border-white/30 transition-all flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined text-[16px]">map</span>
+              <span>View Map</span>
+            </button>
+
             <button
               onClick={() => setActiveModule('Areas')}
               className="px-3 py-1.5 bg-[#A67C27] hover:bg-[#8e681e] text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1"

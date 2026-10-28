@@ -45,15 +45,24 @@ export default function Dashboard({ onOpenAddPlot, onOpenAddBooking, onOpenAddRe
             Real-time tracking of land inventory, plot dimension verifications, advance bookings, title sales, and financial diary balance.
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2.5">
+          <button
+            onClick={() => {
+              setActiveModule('2D & 3D Map');
+            }}
+            className="bg-[#A67C27] hover:bg-[#8e681e] text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md transition-all flex items-center gap-1.5"
+          >
+            <span className="material-symbols-outlined text-[18px]">map</span>
+            <span>2D & 3D GIS Map</span>
+          </button>
           <button
             onClick={() => {
               setActiveModule('Areas');
             }}
-            className="bg-[#A67C27] hover:bg-[#8e681e] text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md transition-all flex items-center gap-1.5"
+            className="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
           >
             <span className="material-symbols-outlined text-[18px]">domain</span>
-            <span>View Land Areas</span>
+            <span>Land Areas</span>
           </button>
           <button
             onClick={() => {
@@ -61,7 +70,7 @@ export default function Dashboard({ onOpenAddPlot, onOpenAddBooking, onOpenAddRe
               setPlotsFilter('All');
               setSelectedAreaFilter('All');
             }}
-            className="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
+            className="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
           >
             <span className="material-symbols-outlined text-[18px]">landscape</span>
             <span>All Plots List</span>
